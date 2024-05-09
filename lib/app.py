@@ -5,13 +5,13 @@ from flask_migrate import Migrate
 from flask_restful import Api
 from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
 from sqlalchemy.exc import IntegrityError
-from src.models import db
+from lib.models import db
 from datetime import datetime, timezone, timedelta
 from flask_cors import CORS
 from dotenv import load_dotenv
 import os
 
-from src.models import User,  RoutePlan, Location, Outlet, Notification, ActivityLog
+from lib.models import User,  RoutePlan, Location, Outlet, Notification, ActivityLog
 
 load_dotenv()
 
