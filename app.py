@@ -344,6 +344,94 @@ def signup():
             }), 500
 
 
+@app.route("/users/rest-user", methods=["PUT"])
+@jwt_required()
+def reset_user_password():
+
+    data = request.get_json()
+
+    if not data:
+        return jsonify({
+            "message": "Invalid request: Empty reques",
+            "successful": False,
+            "status_code": 400
+            }), 400
+    
+    email = data.get("email")
+    password = data.get("password")
+
+    if not email or not password:
+        return jsonify({
+            "message": "Missing required fields",
+            "successful": False,
+            "status_code": 400
+            }), 400
+    
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        return jsonify({
+            "message": "User not found",
+            "successful": False,
+            "status_code": 404
+            }), 404
+    
+
+    hashed_password = bcrypt.generate_password_hash(password).decode("utf-8")
+    user.password = hashed_password
+
+    try:
+        db.session.commit()
+        send_user_new_password(data, user.first_name)
+        return jsonify({
+            "message": "Password reset successfully",
+            "successful": True,
+            "status_code": 200
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "message": f"An error occurred: {str(e)}",
+            "successful": False,
+            "status_code": 500
+        }), 500
+
+
+def send_user_new_password(data, first_name):
+
+    email = data.get("email")
+    password = data.get("password")
+
+    subject = f'Password Reset'
+
+    body = f"\nGreetings {first_name}, I trust this mail finds you well.\n\n"
+
+    body += f"Your request for password reset is successful.\n\n"
+    body += f"You login credentials are as below\n\n"
+
+    body += f"Email: {email}\n\n"
+    body += f"Password: {password}\n\n"
+    body += f"Use this url to login https://m-route-frontend.vercel.app \n\n"
+    body += "Once you log in,  change your password.\n\n"
+
+    body += f"Kind regards,\n\n"
+    body += f"Merch Mate Group\n\n"
+
+    msg = MIMEText(body)
+    msg['Subject'] = subject
+    msg['From'] = f"merchmate@trial-jpzkmgqy6mnl059v.mlsender.net"
+    msg['To'] = email
+
+    smtp_server = app.config['SMTP_SERVER_ADDRESS']
+    smtp_port = app.config['SMTP_PORT']
+    username = app.config['SMTP_USERNAME']
+    password = app.config['SMTP_PASSWORD']
+
+    with smtplib.SMTP(smtp_server, smtp_port) as server:
+        server.starttls()
+        server.login(username, password)
+        server.sendmail(username, email, msg.as_string())
+
 
 def send_new_user_credentials(data):
     first_name = data.get('first_name').title()
@@ -362,14 +450,15 @@ def send_new_user_credentials(data):
 
     body += f"Email: {email}\n\n"
     body += f"Password: {password}\n\n"
-    body += "Please log in and change your password.\n\n"
+    body += f"Use this url to login https://m-route-frontend.vercel.app/ \n\n"
+    body += "Once you log in,  change your password.\n\n"
 
     body += f"Kind regards,\n\n"
     body += f"Merch Mate Group\n\n"
 
     msg = MIMEText(body)
     msg['Subject'] = subject
-    msg['From'] = f"merchmate@trial-0p7kx4x8xdvg9yjr.mlsender.net"
+    msg['From'] = f"merchmate@trial-jpzkmgqy6mnl059v.mlsender.net"
     msg['To'] = email
 
     smtp_server = app.config['SMTP_SERVER_ADDRESS']
@@ -613,7 +702,7 @@ def send_manager_email(data, manager, merchandiser):
 
     msg = MIMEText(body)
     msg['Subject'] = subject
-    msg['From'] = f"{merchandiser.first_name}{merchandiser.last_name}@trial-0p7kx4x8xdvg9yjr.mlsender.net"
+    msg['From'] = f"{merchandiser.first_name}{merchandiser.last_name}@trial-jpzkmgqy6mnl059v.mlsender.net"
     msg['To'] = manager.email
 
     smtp_server = app.config['SMTP_SERVER_ADDRESS']
@@ -698,7 +787,7 @@ def send_email_to_merchandiser(data):
 
     msg = MIMEText(body)
     msg['Subject'] = subject
-    msg['From'] = f"{manager.first_name}{manager.last_name}@trial-0p7kx4x8xdvg9yjr.mlsender.net"
+    msg['From'] = f"{manager.first_name}{manager.last_name}@trial-jpzkmgqy6mnl059v.mlsender.net"
     msg['To'] = merchandiser.email
 
     
@@ -976,6 +1065,87 @@ def route_plan_details():
                 }), 500
 
 
+@app.route("/users/change-route-status/<int:id>", methods=["PUT"])
+@jwt_required()
+def change_route_status(id):
+    data = request.get_json()
+
+    if not data:
+        return jsonify({
+            'message': 'Invalid request: Empty data',
+            "successful": False,
+            "status_code": 400
+        }), 400
+
+    instruction_id = data.get("instruction_id")
+    status = data.get("status").lower() if data.get("status") else None
+
+    if not instruction_id or not status:
+        return jsonify({
+            'message': 'Missing required fields',
+            "successful": False,
+            "status_code": 400
+        }), 400
+
+    if status not in ["pending", "complete"]:
+        return jsonify({
+            'message': 'Status must either be "complete" or "pending"',
+            "successful": False,
+            "status_code": 400
+        }), 400
+
+    route_plan = RoutePlan.query.filter_by(id=id).first()
+
+    if not route_plan:
+        return jsonify({
+            'message': 'Route plan not found',
+            "successful": False,
+            "status_code": 404
+        }), 404
+
+    try:
+        instructions = json.loads(route_plan.instructions)
+    except json.JSONDecodeError:
+        return jsonify({
+            'message': 'Error decoding instructions JSON',
+            "successful": False,
+            "status_code": 500
+        }), 500
+
+    instruction_found = False
+
+    for instruction in instructions:
+        if instruction.get("id") == instruction_id:
+            instruction["status"] = status
+            instruction_found = True
+            break
+
+    if not instruction_found:
+        return jsonify({
+            'message': 'Instruction not found',
+            "successful": False,
+            "status_code": 404
+        }), 404
+
+    route_plan.instructions = json.dumps(instructions)
+
+    try:
+        db.session.commit()
+        return jsonify({
+            'message': 'Route plan status updated successfully',
+            "successful": True,
+            "status_code": 201
+        }), 201
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'message': 'Error saving changes to the database',
+            "successful": False,
+            "status_code": 500
+        }), 500
+
+    
 @app.route('/users/route-plans/<int:route_plan_id>', methods=['PUT'])
 @jwt_required()
 def update_route_plan(route_plan_id):
@@ -1560,231 +1730,9 @@ def get_users_activities():
             }), 500
 
 
-@app.route("/users/outlets", methods=["GET", "POST"])
-@jwt_required()
-def create_and_get_outlet_details():
-    
-    if request.method == "GET":
 
-        try:
-            outlets = Outlet.query.all()
+@app.route("/users/notifications", methods=["GET", "POST"])
 
-            if not outlets:
-                return jsonify({
-                    "message": "There are no outlets",
-                    "successful": False,
-
-                    "status_code": 404
-                                }), 404
-
-            
-            outlet_list = []
-
-            for outlet in outlets:
-                outlet_details = {
-                    "id": outlet.id,
-                    "name": outlet.name,
-                    "address": outlet.address,
-                    "contact_info": outlet.contact_info,
-                    "street" : outlet.street
-                }
-                outlet_list.append(outlet_details)
-
-            user_id = get_jwt_identity()
-            # user_id = 3
-            log_activity(f'Created outlet', user_id)
-
-            return jsonify({
-                "message": outlet_list,
-                "successful": True,
-                "status_code": 200
-            }), 200
-
-        except Exception as err:
-            return jsonify({
-                "message": f"Error: {err}",
-                "successful": False,
-                "status_code": 500
-                }), 500
-        
-        
-    elif request.method == "POST":
-
-        data = request.get_json()
-
-        if not data:
-            return jsonify({
-                "message": "Invalid data",
-                "successful": False,
-                "status_code": 400
-                }), 400
-        
-        name = data.get("name")
-        address = data.get("address")
-        contact_info = data.get("contact_info")
-        street = data.get("street")
-
-
-        if not all([name, address, contact_info, street]):
-
-            return jsonify({
-                "message": "Missing required fields",
-                "successful": False,
-                "status_code": 400
-                }), 400
-        
-        if not isinstance(name, str) or len(name) > 100:
-            return jsonify({
-                'message': 'Outlet name must be a string and not more than 100 characters',
-                "successful": False,
-                "status_code": 400
-                }), 400
-        
-        if not isinstance(address, str) or len(address) > 200:
-            return jsonify({
-                'message': 'Address must be a string and not more than 200 characters',
-                "successful": False,
-                "status_code": 400
-                }), 400
-        
-        if not isinstance(contact_info, str) or len(contact_info) > 100:
-            return jsonify({
-                'message': 'Contact info must be a string and not more than 100 characters',
-                "successful": False,
-                "status_code": 400
-                }), 400
-        
-        if not isinstance(street, str) or len(street) > 200:
-            return jsonify({
-                'message': 'Street name must be a string of not more than 200 characters',
-                "successful": False,
-                "status_code": 400
-                }), 400
-        
-
-        new_outlet = Outlet(
-            name=name,
-            address=address,
-            contact_info=contact_info,
-            street = street
-        )
-        
-        try:
-
-            db.session.add(new_outlet)
-            db.session.commit()
-
-            user_id = get_jwt_identity()
-            # user_id = 3
-            log_activity(f'Created outlet: {name}', user_id)
-
-            return jsonify({
-                "message": "Outlet created successfully",
-                "successful": True,
-                "status_code": 201
-                }), 201
-
-        except Exception as err:
-
-            db.session.rollback()
-            return jsonify({
-
-                "message": f"Error: {err}",
-
-                "successful": False,
-                "status_code": 500
-                }), 500
-
-
-@app.route("/users/edit-outlet/<int:id>", methods=["PUT"])
-@jwt_required()
-def edit_outlet_details(id):
-    
-    try:
-        data = request.get_json()
-
-        if not data:
-            return jsonify({
-                "message": "Invalid request",
-                "successful": False,
-                "status_code": 400
-                }), 400
-
-        outlet = Outlet.query.get(id)
-        
-        if not outlet:
-            return jsonify({
-                "message": "Outlet not found",
-                "successful": False,
-                "status_code": 404
-                }), 404
-        
-        if 'name' in data:
-            if not isinstance(data['name'], str) or len(data['name']) > 100:
-                return jsonify({
-                    'message': 'Outlet name must be a string and not exceed 100 characters',
-                    "successful": False,
-                    "status_code": 400
-                    }), 400
-        if "street" in data:
-            if not isinstance(data["street"], str) or len(data["street"]) > 200:
-                return jsonify({
-                    'message': 'Street name must be a string and not exceed 200 characters',
-                    "successful": False,
-                    "status_code": 400
-                    }), 400
-            
-        if 'address' in data:
-            if not isinstance(data['address'], str) or len(data['address']) > 200:
-                return jsonify({
-                    'message': 'Address must be a string and not exceed 200 characters',
-                    "successful": False,
-                    "status_code": 400
-                    }), 400
-            
-        if 'contact_info' in data:
-            if not isinstance(data['contact_info'], str) or len(data['contact_info']) > 100:
-                return jsonify({
-                    'message': 'Contact info must be a string and not exceed 100 characters',
-                    "successful": False,
-                    "status_code": 400
-                    }), 400
-
-        # Update outlet attributes if provided in the request data
-        if 'name' in data:
-            outlet.name = data['name']
-        if 'address' in data:
-            outlet.address = data['address']
-        if 'contact_info' in data:
-            outlet.contact_info = data['contact_info']
-        if "street" in data:
-            outlet.street = data["street"]
-
-        # Commit the changes to the database
-        db.session.commit()
-
-        user_id = get_jwt_identity()
-        # user_id = 3
-        log_activity('Created outlet', user_id)
-        
-        return jsonify({
-            "message": "Outlet details updated successfully",
-            "successful": True,
-            "status_code": 201
-            }), 201
-    
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            "message": str(e),
-            "successful": False,
-            "status_code": 500
-            }), 500
-
-
-
-
-@app.route("/users/<int:user_id>/notifications", methods=["GET", "POST"])
 @jwt_required()
 def manage_notifications(user_id):
     # Ensure that the user_id from the URL matches the one in the JWT token
