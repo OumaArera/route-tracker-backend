@@ -20,7 +20,7 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(300), nullable=False)
     role = db.Column(db.String(20), nullable=False)
-    status = db.Column(db.String(20), nullable = False, default= "active")  #active/blocked. 
+    status = db.Column(db.String(20), nullable=False, default="active")  # active/blocked. 
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
     last_login = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
     last_password_change = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
@@ -35,12 +35,10 @@ class RoutePlan(db.Model):
     manager_id = db.Column(db.Integer, ForeignKey('users.id'), nullable=False)
     date_range = db.Column(JSON, nullable=False)
     instructions = db.Column(db.Text, nullable=False)
-    status = db.Column(db.String(20), nullable=False) 
+    status = db.Column(db.String(20), nullable=False)
 
     merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('route_plans', lazy=True))
     manager = db.relationship('User', foreign_keys=[manager_id], backref=db.backref('assigned_route_plans', lazy=True))
-
-
 
 
 class Location(db.Model):
@@ -74,9 +72,8 @@ class Notification(db.Model):
     recipient_id = db.Column(db.Integer, ForeignKey('users.id'), nullable=False)
     content = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
-    status = db.Column(db.String(20), nullable=False)  
+    status = db.Column(db.String(20), nullable=False)
     recipient = db.relationship('User', backref=db.backref('notifications', lazy=True))
-
 
 
 class ActivityLog(db.Model):
@@ -86,14 +83,15 @@ class ActivityLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, ForeignKey('users.id'), nullable=False)
     action = db.Column(db.String(100), nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc)) 
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
     user = db.relationship('User', backref=db.backref('activity_logs', lazy=True))
+
 
 class Review(db.Model):
 
     __tablename__ = "reviews"
 
-    id = db.Column(db.Integer, primary_key = True)
+    id = db.Column(db.Integer, primary_key=True)
     manager_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
     merchandiser_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
     activity = db.Column(db.String(200), nullable=False)
@@ -105,6 +103,21 @@ class Review(db.Model):
     manager = db.relationship('User', foreign_keys=[manager_id], backref=db.backref('rated_reviews', lazy=True))
 
 
+class PerformanceMetrics(db.Model):
 
+    __tablename__ = "performance_metrics"
 
+    id = db.Column(db.Integer, primary_key=True)
+    merchandiser_id = db.Column(db.Integer, ForeignKey('users.id'), nullable=False)
+    shelf_space = db.Column(db.Float, nullable=True)
+    competitors_branding_marketing = db.Column(db.Float, nullable=True)
+    placement_display = db.Column(db.Float, nullable=True)
+    sales_order_returns = db.Column(db.Float, nullable=True)
+    pricing_and_labeling = db.Column(db.Float, nullable=True)
+    completeness = db.Column(db.Float, nullable=True)
+    clarity = db.Column(db.Float, nullable=True)
+    details = db.Column(db.Float, nullable=True)
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
+
+    merchandiser = db.relationship('User', backref=db.backref('performance_metrics', lazy=True))
 
