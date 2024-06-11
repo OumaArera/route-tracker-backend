@@ -49,7 +49,7 @@ class Location(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     merchandiser_id = db.Column(db.Integer, ForeignKey('users.id'), nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
+    timestamp = db.Column(db.DateTime, nullable=False)
     latitude = db.Column(db.Float, nullable=False)
     longitude = db.Column(db.Float, nullable=False)
     merchandiser = db.relationship('User', backref=db.backref('locations', lazy=True))
