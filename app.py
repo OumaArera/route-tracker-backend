@@ -1067,6 +1067,8 @@ def route_plan_details():
                 }), 500
 
 
+
+
 @app.route("/users/change-route-status/<int:id>", methods=["PUT"])
 @jwt_required()
 def change_route_status(id):
@@ -2227,10 +2229,22 @@ def approve_response():
             "status_code": 404,
             "successful": False
         }), 404
+    
+
+    
+    response = {
+        "id": response_to_rate.id,
+        "merchandiser_id": response_to_rate.merchandiser_id,
+        "manager_id": response_to_rate.manager_id,
+        "response": response_to_rate.response,
+        "date_time": response_to_rate.date_time,
+        "status": response_to_rate.status,
+        "kpi_id": response_to_rate.kpi_id
+    }
 
     if response_to_rate:
-        # rate(response_to_rate, key_performance_indicators)
-        pass
+        compute_merch_scores(response)
+        
         
     else:
         return jsonify({
@@ -2421,8 +2435,6 @@ def get_manager_merchandisers(manager_id):
     }), 200
 
 
-
-
 def merchandiser_performance(merchandiser_id, new_scores):
     current_datetime = datetime.now()
     start_of_day = current_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -2469,8 +2481,103 @@ def merchandiser_performance(merchandiser_id, new_scores):
     # Commit the changes to the database
     db.session.commit()
 
-def compute_merch_scores():
-    pass
+
+def is_grammatically_correct(text):
+    return len(re.findall(r'\b(?:\w+\b\s+){10,}', text)) > 0  
+
+def compute_merch_scores(response):
+    merchandiser_id = response['merchandiser_id']
+    kpi_id = response['kpi_id']
+    
+    # Fetch the relevant KPI
+    kpi = KeyPerformaceIndicator.query.filter_by(id=kpi_id).first()
+    kpi_metrics = kpi.performance_metric
+    
+    # Initialize the performance dictionary
+    performance_dict = {}
+
+    # Calculate scores for each KPI metric
+    for metric, requirements in kpi_metrics.items():
+        text_required = requirements.get('text', False)
+        image_required = requirements.get('image', False)
+        metric_response = response['response'].get(metric, {})
+
+        text_score = 0
+        image_score = 0
+
+        if text_required:
+            text = metric_response.get('text', "")
+            if len(text) > 200:
+                text_score = 1
+            elif len(text) > 50 and 'image' in metric_response:
+                text_score = 1
+            elif len(text) > 100:
+                text_score = 0.5
+            elif 'image' in metric_response:
+                text_score = 0.5
+
+        if image_required and 'image' in metric_response:
+            image_score = 0.5
+
+        # Ensure the sum of text_score and image_score does not exceed 1
+        total_score = min(text_score + image_score, 1)
+        performance_dict[metric] = total_score
+
+    # Calculate the total response length score
+    total_response_length = len(response['response'].get('text', ""))
+    if total_response_length > 500:
+        performance_dict['total_length'] = 1
+    else:
+        performance_dict['total_length'] = 0
+
+    # Calculate the clarity score
+    text_response = response['response'].get('text', "")
+    if is_grammatically_correct(text_response):
+        performance_dict['clarity'] = 1
+    else:
+        performance_dict['clarity'] = 0
+
+    # Sum the individual scores and calculate the percentage
+    total_possible_score = len(kpi_metrics) * 1 + 2  # +2 for total_length and clarity
+    total_score = sum(performance_dict.values())
+    performance_percentage = (total_score / total_possible_score) * 100
+
+    # Reduce by 60%
+    reduced_performance = performance_percentage * 0.6
+
+    # Calculate the completeness score based on the route plan for the current month
+    current_date = datetime.now()
+    current_year = current_date.year
+    current_month = current_date.month
+
+    route_plan = RoutePlan.query.filter_by(merchandiser_id=merchandiser_id).first()
+    completeness_percentage = 0
+
+    if route_plan:
+        date_range = route_plan.date_range
+        start_date = datetime.strptime(date_range['start_date'], '%Y-%m-%d')
+        
+        if start_date.year == current_year and start_date.month == current_month:
+            completed_instructions = 0
+            total_instructions = len(route_plan.instructions)
+            
+            for instruction in route_plan.instructions:
+                if instruction['status'] == 'complete':
+                    completed_instructions += 1
+            
+            completeness_percentage = (completed_instructions / total_instructions) * 100 if total_instructions else 0
+
+    # Reduce completeness by 40%
+    reduced_completeness = completeness_percentage * 0.4
+
+    # Calculate the total performance
+    total_performance = reduced_performance + reduced_completeness
+    performance_dict['completeness'] = completeness_percentage
+    performance_dict['total_performance'] = total_performance
+
+    return merchandiser_performance(merchandiser_id, performance_dict)
+
+
 
 
 
