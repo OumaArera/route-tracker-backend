@@ -15,9 +15,11 @@ from sqlalchemy.orm.exc import NoResultFound
 import json
 import os
 import re
+from sqlalchemy.orm import joinedload
+import calendar
 
 
-from models import User,  RoutePlan, Location, Outlet, Notification, ActivityLog, Review
+from models import User,  RoutePlan, Location, Notification, ActivityLog, Review, Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance
 
 load_dotenv()
 
@@ -1065,6 +1067,8 @@ def route_plan_details():
                 }), 500
 
 
+
+
 @app.route("/users/change-route-status/<int:id>", methods=["PUT"])
 @jwt_required()
 def change_route_status(id):
@@ -1730,9 +1734,6 @@ def get_users_activities():
             }), 500
 
 
-
-@app.route("/users/notifications", methods=["GET", "POST"])
-
 @jwt_required()
 def manage_notifications(user_id):
     # Ensure that the user_id from the URL matches the one in the JWT token
@@ -2086,6 +2087,499 @@ def update_user(user_id):
             "successful": False,
             "status_code": 500
         }), 500
+
+@app.route("/users/get-facilities/<int:manager_id>", methods=[ "GET"])
+@jwt_required()
+def get_facilities(manager_id):
+    facilities = Facility.query.filter_by(manager_id=manager_id).all()
+
+    if not facilities:
+        return jsonify({
+            "message": "There are no facilities",
+            "status_code": 404,
+            "successful": False
+        }), 404
+
+    facilities_data = []
+
+    for facility in facilities:
+        facilities_data.append({
+            "id": facility.id,
+            "name": facility.name,
+            "location": facility.location,
+            "type": facility.type
+        })
+
+        return jsonify({
+            "message": facilities_data,
+            "successful": True,
+            "status_code": 200
+        }), 200
+    
+
+@app.route("/users/create/facility", methods=["POST"])
+@jwt_required()
+def create_facility():
+    data = request.get_json()
+
+    if not data:
+        return jsonify({
+            "message": "There are no facilities",
+            "status_code": 400,
+            "successful": False
+        }), 400
+    
+    name = data.get("name")
+    location = data.get("location")
+    type_ = data.get("type")
+    manager_id = data.get("manager_id")
+
+    if not name or not location or not type_ or not manager_id:
+        return jsonify({
+            "message": "Missing required fields",
+            "status_code": 400,
+            "successful": False
+        }), 400
+    
+    if not all(isinstance(item, str) for item in [name, location, type_]):
+        return jsonify({
+            "message": "Fields 'name', 'location', and 'type' must be strings",
+            "status_code": 400,
+            "successful": False
+        }), 400
+    
+    new_facility = Facility(
+        name=name,
+        location=location,
+        type=type_,
+        manager_id=manager_id
+    )
+
+    try:
+        db.session.add(new_facility)
+        db.session.commit()
+        return jsonify({
+            "message": "Facility created successfully",
+            "status_code": 201,
+            "successful": True
+        }), 201
+    except Exception as err:
+        db.session.rollback()
+        return jsonify({
+            "message": f"Failed to create facility: Error:  {err}",
+            "status_code": 500,
+            "successful": False
+        }), 500
+
+
+@app.route("/users/get-responses/<int:manager_id>", methods=["GET"])
+@jwt_required()
+def get_responses(manager_id):
+    # responses = Response.query.filter_by(manager_id=manager_id, status="pending").all()
+    responses = db.session.query(Response).join(User, Response.merchandiser_id == User.id) \
+        .filter(Response.manager_id == manager_id, Response.status == "pending") \
+        .options(joinedload(Response.merchandiser)).all()
+
+    if not responses:
+        return jsonify({
+            "message": "There are no responses yet.",
+            "status_code": 404,
+            "successful": False
+        }), 404
+    
+    responses_list = []
+
+    for response in responses:
+        responses_list.append({
+            "id": response.id,
+            "merchandiser": f"{response.merchandiser.first_name} {response.merchandiser.last_name}",
+            "manager_id": response.manager_id,
+            "response": response.response,
+            "date_time": response.date_time,
+            "status": response.status
+        })
+
+    return jsonify({
+            "message": responses_list,
+            "status_code": 200,
+            "successful": True
+        }), 200
+    
+
+@app.route("/users/approve/response", methods=["PUT"])
+@jwt_required()
+def approve_response():
+    data = request.get_json()
+
+    if not data:
+        return jsonify({
+            "message": "Invalid data: You did not provide any data.",
+            "status_code": 400,
+            "successful": False
+        }), 400
+    
+    response_id = data.get("response_id")
+
+    response_to_rate = Response.query.filter_by(id=response_id).first()
+    key_performance_indicators = KeyPerformaceIndicator.query.filter_by(id=response_to_rate.kpi_id).first()
+
+    if not key_performance_indicators:
+        return jsonify({
+            "message": "Rating parameters have not been provided.",
+            "status_code": 404,
+            "successful": False
+        }), 404
+    
+
+    
+    response = {
+        "id": response_to_rate.id,
+        "merchandiser_id": response_to_rate.merchandiser_id,
+        "manager_id": response_to_rate.manager_id,
+        "response": response_to_rate.response,
+        "date_time": response_to_rate.date_time,
+        "status": response_to_rate.status,
+        "kpi_id": response_to_rate.kpi_id
+    }
+
+    if response_to_rate:
+        compute_merch_scores(response)
+        
+        
+    else:
+        return jsonify({
+            "message": "Response does not exist.",
+            "status_code": 404,
+            "successful": False
+        }), 404
+
+    response_to_rate.status = "Approved"
+
+    try:
+        db.session.commit()
+        return jsonify({
+            "message": "Response approved successfully.",
+            "status_code": 201,
+            "successful": True
+        }), 201
+
+    except Exception as err:
+        db.session.rollback()
+        return jsonify({
+            "message": f"Failed to approve the response: Error: {err}",
+            "status_code": 500,
+            "successful": False
+        }), 500
+
+
+@app.route("/users/post/response", methods=["POST"])
+@jwt_required()
+def create_response():
+    data = request.get_json()
+
+    if not data:
+        return jsonify({
+            "message": "Invalid data: You did not provide any data.",
+            "status_code": 400,
+            "successful": False
+        }), 400
+    
+    merchandiser_id = data.get("merchandiser_id")
+    manager_id = data.get("manager_id")
+    response = data.get("response")
+    date_time = data.get("date_time")
+    status = data.get("status").lower() if data.get("status") else None
+
+    if not all([merchandiser_id, manager_id, response, date_time, status]):
+        return jsonify({
+            "message": "Missing required fields.",
+            "status_code": 400,
+            "successful": False
+        }), 400
+    
+    try:
+        response = json.loads(response)
+        date_time = datetime.strptime(date_time, "%Y-%m-%d %H:%M:%S")
+
+    except Exception:
+        return jsonify({
+            "message": "Provide response body as JSON type and time in the format '%Y-%m-%d %H:%M:%S'",
+            "status_code": 400,
+            "successful": False
+        }), 400
+    
+    if status == "pending":
+        return jsonify({
+            "message": "Status must be pending",
+            "status_code": 400,
+            "successful": False
+        }), 400
+    
+    new_response = Response(
+        merchandiser_id=merchandiser_id,
+        manager_id=manager_id,
+        response=response,
+        date_time=date_time,
+        status=status
+    )
+
+    try:
+        db.session.add(new_response)
+        db.session.commit()
+        return jsonify({
+            "message": "Response sent successfully.",
+            "status_code": 201,
+            "successful": True
+        }), 201
+
+    except Exception as err:
+        db.session.rollback()
+        return jsonify({
+            "message": f"Failed to send response: Error: {err}",
+            "status_code": 500,
+            "successful": False
+        }), 500
+    
+
+
+@app.route("/users/assign/merchandiser", methods=["POST"])
+@jwt_required()
+def assign_merchandiser():
+    data = request.get_json()
+
+    if not data:
+        return jsonify({
+            "message": "Invalid data: You did not provide any data.",
+            "status_code": 400,
+            "successful": False
+        }), 400
+    
+    manager_id = data.get("manager_id")
+    merchandiser_id = data.get("merchandiser_id")
+    month = data.get("month_year").title() if data.get("month") else None
+    year= data.get("year")
+
+    if not all({manager_id, merchandiser_id, month}):
+        return jsonify({
+            "message": "Missing required fields.",
+            "status_code": 400,
+            "successful": False
+        }), 400
+    
+    if month not in calendar.month_name[1:]:
+        return jsonify({
+            "message": "Invalid month. Please provide a valid month name (e.g., January to December).",
+            "status_code": 400,
+            "successful": False
+        }), 400
+    
+    new_merchandiser = AssignedMerchandiser(
+        manager_id=manager_id,
+        merchandiser_id=merchandiser_id,
+        month=month,
+        year=year
+    )
+
+    try:
+        db.session.add(new_merchandiser)
+        db.session.commit()
+        return jsonify({
+            "message": "Merchandiser assigned successfully.",
+            "status_code": 201,
+            "successful": True
+        }), 201
+        
+
+    except Exception as err:
+        db.session.rollback()
+        return jsonify({
+            "message": f"Failed to assign merchandiser: Error: {err}",
+            "status_code": 500,
+            "successful": False
+        }), 500
+    
+
+@app.route("/users/get/merchandisers/<int:manager_id>", methods=["GET"])
+@jwt_required()
+def get_manager_merchandisers(manager_id):
+    current_year = datetime.now().year
+    current_month = datetime.now().strftime("%B").capitalize()  
+
+    assigned_merchandisers = AssignedMerchandiser.query.filter_by(manager_id=manager_id, month=current_month, year=current_year).all()
+
+    if not assigned_merchandisers:
+        return jsonify({
+            "message": f"You have not been assigned any merchandiser for the period {current_month}, {current_year}",
+            "status_code": 400,
+            "successful": False
+        }), 400
+    
+    assigned_merchandisers_list = []
+
+    for merchandiser in assigned_merchandisers:
+        merchandiser_data = User.query.filter_by(id=merchandiser.merchandiser_id).first()
+
+        if merchandiser_data:
+            assigned_merchandisers_list.append({
+                "id": merchandiser.id,
+                "merchandiser_name": f"{merchandiser_data.first_name} {merchandiser_data.last_name}",
+                "manager_id": merchandiser.manager_id,
+                "month": merchandiser.month,
+                "year": merchandiser.year,
+            })
+
+    return jsonify({
+        "message": assigned_merchandisers_list,
+        "status_code": 200,
+        "successful": True
+    }), 200
+
+
+def merchandiser_performance(merchandiser_id, new_scores):
+    current_datetime = datetime.now()
+    start_of_day = current_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Find the last created performance entry for the given merchandiser_id
+    last_performance = MerchandiserPerformance.query.filter_by(merchandiser_id=merchandiser_id)\
+                                                     .order_by(MerchandiserPerformance.date_time.desc())\
+                                                     .first()
+    
+    if not last_performance or last_performance.date_time < start_of_day:
+        # If no performance entry exists for today, or the last one is from a previous day,
+        # create a new entry for today
+        new_performance = MerchandiserPerformance(
+            merchandiser_id=merchandiser_id,
+            date_time=start_of_day,
+            day=start_of_day.strftime('%A'),
+            performance={}
+        )
+        db.session.add(new_performance)
+        db.session.commit()
+    
+    # Fetch the performance entry for the current day and merchandiser
+    performance_entry = MerchandiserPerformance.query.filter_by(merchandiser_id=merchandiser_id)\
+                                                      .filter_by(date_time=start_of_day)\
+                                                      .first()
+    
+    # Update the performance metrics with the new scores
+    current_performance = performance_entry.performance
+    for metric, new_score in new_scores.items():
+        # Update the value of the metric by taking the current value, adding the new value,
+        # performing an average, and replacing the value with the result
+        current_value = current_performance.get(metric, 0)
+        updated_value = (current_value + new_score) / 2
+        current_performance[metric] = updated_value
+    
+    # Calculate the total performance separately if it's provided in new_scores
+    if 'total_performance' in new_scores:
+        current_performance['total_performance'] = new_scores['total_performance']
+    
+    
+    # Update the performance entry with the modified performance metrics
+    performance_entry.performance = current_performance
+    
+    # Commit the changes to the database
+    db.session.commit()
+
+
+def is_grammatically_correct(text):
+    return len(re.findall(r'\b(?:\w+\b\s+){10,}', text)) > 0  
+
+def compute_merch_scores(response):
+    merchandiser_id = response['merchandiser_id']
+    kpi_id = response['kpi_id']
+    
+    # Fetch the relevant KPI
+    kpi = KeyPerformaceIndicator.query.filter_by(id=kpi_id).first()
+    kpi_metrics = kpi.performance_metric
+    
+    # Initialize the performance dictionary
+    performance_dict = {}
+
+    # Calculate scores for each KPI metric
+    for metric, requirements in kpi_metrics.items():
+        text_required = requirements.get('text', False)
+        image_required = requirements.get('image', False)
+        metric_response = response['response'].get(metric, {})
+
+        text_score = 0
+        image_score = 0
+
+        if text_required:
+            text = metric_response.get('text', "")
+            if len(text) > 200:
+                text_score = 1
+            elif len(text) > 50 and 'image' in metric_response:
+                text_score = 1
+            elif len(text) > 100:
+                text_score = 0.5
+            elif 'image' in metric_response:
+                text_score = 0.5
+
+        if image_required and 'image' in metric_response:
+            image_score = 0.5
+
+        # Ensure the sum of text_score and image_score does not exceed 1
+        total_score = min(text_score + image_score, 1)
+        performance_dict[metric] = total_score
+
+    # Calculate the total response length score
+    total_response_length = len(response['response'].get('text', ""))
+    if total_response_length > 500:
+        performance_dict['total_length'] = 1
+    else:
+        performance_dict['total_length'] = 0
+
+    # Calculate the clarity score
+    text_response = response['response'].get('text', "")
+    if is_grammatically_correct(text_response):
+        performance_dict['clarity'] = 1
+    else:
+        performance_dict['clarity'] = 0
+
+    # Sum the individual scores and calculate the percentage
+    total_possible_score = len(kpi_metrics) * 1 + 2  # +2 for total_length and clarity
+    total_score = sum(performance_dict.values())
+    performance_percentage = (total_score / total_possible_score) * 100
+
+    # Reduce by 60%
+    reduced_performance = performance_percentage * 0.6
+
+    # Calculate the completeness score based on the route plan for the current month
+    current_date = datetime.now()
+    current_year = current_date.year
+    current_month = current_date.month
+
+    route_plan = RoutePlan.query.filter_by(merchandiser_id=merchandiser_id).first()
+    completeness_percentage = 0
+
+    if route_plan:
+        date_range = route_plan.date_range
+        start_date = datetime.strptime(date_range['start_date'], '%Y-%m-%d')
+        
+        if start_date.year == current_year and start_date.month == current_month:
+            completed_instructions = 0
+            total_instructions = len(route_plan.instructions)
+            
+            for instruction in route_plan.instructions:
+                if instruction['status'] == 'complete':
+                    completed_instructions += 1
+            
+            completeness_percentage = (completed_instructions / total_instructions) * 100 if total_instructions else 0
+
+    # Reduce completeness by 40%
+    reduced_completeness = completeness_percentage * 0.4
+
+    # Calculate the total performance
+    total_performance = reduced_performance + reduced_completeness
+    performance_dict['completeness'] = completeness_percentage
+    performance_dict['total_performance'] = total_performance
+
+    return merchandiser_performance(merchandiser_id, performance_dict)
+
+
+
+
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5555, debug=True)
