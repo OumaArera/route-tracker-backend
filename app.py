@@ -44,14 +44,20 @@ jwt = JWTManager(app)
 bcrypt = Bcrypt(app)
 
 api = Api(app)
-# CORS(app)
-CORS(app, resources={r"/*": {"origins": "https://m-route-frontend.vercel.app"}})
+
+CORS(app)
 
 blacklist = set()
 
 @app.route('/')
 def index():
     return '<h1>Merchandiser Route App</h1>'
+
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
 
 @app.route("/users/edit-user/<int:id>", methods=["PUT"])
 @jwt_required()
@@ -881,7 +887,7 @@ def location_details():
         except Exception as err:
             db.session.rollback()
             return jsonify({ 'message': f"Internal server error. Error: {err}", "successful": False, "status_code": 500}), 500
-        
+   
 
 @app.route("/users/login", methods=["POST"])
 def login_user():
