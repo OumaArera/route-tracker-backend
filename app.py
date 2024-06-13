@@ -44,7 +44,8 @@ jwt = JWTManager(app)
 bcrypt = Bcrypt(app)
 
 api = Api(app)
-CORS(app)
+# CORS(app)
+CORS(app, resources={r"/*": {"origins": "https://m-route-frontend.vercel.app"}})
 
 blacklist = set()
 
