@@ -1,17 +1,34 @@
 print("Hello, World!")
 
 
-# {
-#     "pricing_and_labeling":{
-#         "text": True,  # length of > 2000
-#         "image": False
-#     },
-#     "sales_orders_return":{
-#         "text":True,
-#         "image": True
-#     },
+{
+    "shelf_space":{
+        "text": True,  
+        "image": False
+    },
+    "stock_level":{
+        "text":True,
+        "image": True
+    },
+    "competitors_branding":{
+        "text":True,
+        "image": True
+    },
+    "competitors_sales":{
+        "text":True,
+        "image": True
+    },
+    "sales_orders_return":{
+        "text":True,
+        "image": False
+    },
+    "price_variations":{
+        "text":True,
+        "image": False
+    },
+    
 
-# }
+}
 
 # {
 #     "pricing_labeling":{
@@ -96,3 +113,38 @@ print("Hello, World!")
 #     }
 #     # Till December
 # }
+
+
+
+{
+    "sector_name": "Consumer Packaging Goods",
+    "company_name": "Mash Industries Limited",
+    "admin_id": 29,
+    "performance_metric": {
+        "shelf_space":{
+            "text": True,  
+            "image": False
+        },
+        "stock_level":{
+            "text":True,
+            "image": True
+        },
+        "competitors_branding":{
+            "text":True,
+            "image": True
+        },
+        "competitors_sales":{
+            "text":True,
+            "image": True
+        },
+        "sales_orders_return":{
+            "text":True,
+            "image": False
+        },
+        "price_variations":{
+            "text":True,
+            "image": False
+        }
+
+    }
+}

@@ -83,10 +83,12 @@ class KeyPerformaceIndicator(db.Model):
     __tablename__ = "key_performance_indicators"
 
     id = db.Column(db.Integer, primary_key=True)
-    facility_id = db.Column(db.Integer, ForeignKey("facilities.id"), nullable=False)
+    sector_name = db.Column(db.String(100), nullable=False)
+    company_name = db.Column(db.String(100), nullable=False)
+    admin_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
     performance_metric = db.Column(JSON, nullable=False)
 
-    facility = db.relationship("Facility", backref=db.backref('key_performance_indicators', lazy=True))
+    facility = db.relationship("User", backref=db.backref('key_performance_indicators', lazy=True))
 
 class Response(db.Model):
     __tablename__ = "responses"
