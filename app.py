@@ -19,7 +19,7 @@ from sqlalchemy.orm import joinedload
 import calendar
 
 
-from models import User,  RoutePlan, Location, Notification, ActivityLog, Review, Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance
+from models import User,  RoutePlan, Location, Notification, ActivityLog, Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance
 
 load_dotenv()
 
@@ -44,14 +44,14 @@ jwt = JWTManager(app)
 bcrypt = Bcrypt(app)
 
 api = Api(app)
-CORS(app)
+# CORS(app)
+CORS(app, resources={r"/*": {"origins": "https://m-route-frontend.vercel.app"}})
 
 blacklist = set()
 
 @app.route('/')
 def index():
     return '<h1>Merchandiser Route App</h1>'
-
 
 @app.route("/users/edit-user/<int:id>", methods=["PUT"])
 @jwt_required()
@@ -60,11 +60,7 @@ def change_user_details(id):
     data = request.get_json()
 
     if not data:
-        return jsonify({
-            'message': 'Invalid request: Empty data',
-            "successful": False,
-            "status_code": 400
-        }), 400
+        return jsonify({'message': 'Invalid request: Empty data', "successful": False, "status_code": 400}), 400
 
     # Extract first and last name from request data
     first_name = data.get('first_name')
@@ -72,20 +68,12 @@ def change_user_details(id):
 
     # Validate that both first and last names are provided
     if not first_name or not last_name:
-        return jsonify({
-            'message': 'Invalid request: first_name and last_name are required',
-            "successful": False,
-            "status_code": 400
-        }), 400
+        return jsonify({'message': 'Invalid request: first_name and last_name are required', "successful": False, "status_code": 400}), 400
 
     user = User.query.filter_by(id=id).first()
 
     if not user:
-        return jsonify({
-            'message': 'User not found',
-            "successful": False,
-            "status_code": 404
-        }), 404
+        return jsonify({'message': 'User not found', "successful": False, "status_code": 404}), 404
 
     # Update user details
     user.first_name = first_name
@@ -94,20 +82,12 @@ def change_user_details(id):
     try:
         # Commit changes to the database
         db.session.commit()
-        return jsonify({
-            'message': 'User details updated successfully',
-            "successful": True,
-            "status_code": 200
-        }), 200
+        return jsonify({'message': 'User details updated successfully',"successful": True,"status_code": 200}), 200
     
     except Exception as e:
         # Rollback in case of an error
         db.session.rollback()
-        return jsonify({
-            'message': 'An error occurred while updating user details',
-            "successful": False,
-            "status_code": 500
-        }), 500
+        return jsonify({'message': 'An error occurred while updating user details',"successful": False,"status_code": 500}), 500
     
 
 @app.route("/users/delete-user", methods=["DELETE"])
@@ -118,28 +98,16 @@ def delete_user():
     user_to_delete = User.query.filter_by(staff_no=staff_no).first()
 
     if not user_to_delete:
-        return jsonify({
-            'message': 'User not found',
-            "successful": False,
-            "status_code": 404
-        }), 404
+        return jsonify({'message': 'User not found', "successful": False, "status_code": 404}), 404
 
     try:
         db.session.delete(user_to_delete)
         db.session.commit()
-        return jsonify({
-            'message': f'User {staff_no} has been deleted successfully',
-            "successful": True,
-            "status_code": 204
-        }), 204
+        return jsonify({'message': f'User {staff_no} has been deleted successfully', "successful": True, "status_code": 204}), 204
 
     except Exception as err:
         db.session.rollback()
-        return jsonify({
-            'message': f'Failed to delete user: {err}',
-            "successful": False,
-            "status_code": 500
-        }), 500
+        return jsonify({'message': f'Failed to delete user: {err}', "successful": False, "status_code": 500}), 500
     
 
 def log_activity(action, user_id):
@@ -150,20 +118,12 @@ def log_activity(action, user_id):
         )
         db.session.add(new_activity)
         db.session.commit()
-        return jsonify({
-            'message': 'Activity logged successfully',
-            "successful": True,
-            "status_code": 201
-        }), 201
+        return jsonify({'message': 'Activity logged successfully', "successful": True, "status_code": 201}), 201
 
     except Exception as err:
         db.session.rollback()
         print(f"Failed to log activity. Error: {err}")
-        return jsonify({
-            'message': f'Error {err}',
-            "successful": False,
-            "status_code": 500
-        }), 500
+        return jsonify({'message': f'Error {err}', "successful": False, "status_code": 500}), 500
 
 @jwt.token_in_blocklist_loader
 def check_if_token_in_blacklist(jwt_header, jwt_payload):
@@ -184,11 +144,7 @@ def logout_user():
     log_activity('Logout', user_id)
 
     # Create a response object
-    response = make_response(jsonify({
-        "message": "Logout successful.",
-        "successful": True,
-        "status_code": 201
-    }))
+    response = make_response(jsonify({"message": "Logout successful.", "successful": True, "status_code": 201}))
 
     # Unset JWT cookies
     unset_jwt_cookies(response)
@@ -202,11 +158,7 @@ def signup():
 
     # Confirm if there's data
     if not data:
-        return jsonify({
-            "message": "Invalid request",
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({"message": "Invalid request: You provided an empty data", "successful": False, "status_code": 400}), 400
 
     # Extract required fields
     first_name = data.get('first_name').title() if data.get('first_name') else None
@@ -223,105 +175,46 @@ def signup():
         national_id_no = int(data.get('national_id_no'))
         staff_no = int(data.get('staff_no'))
     except (ValueError, TypeError):
-        return jsonify({
-            'message': 'National ID and Staff number must be integers',
-            "successful": False,
-            "status_code": 400
-        }), 400
-
+        return jsonify({'message': 'National ID and Staff number must be integers', "successful": False, "status_code": 400}), 400
 
     if User.query.filter(User.staff_no == staff_no).first():
-        return jsonify({
-            'message': 'Staff number already assigned',
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({'message': 'Staff number already assigned',"successful": False,"status_code": 400}), 400
 
     if User.query.filter(User.national_id_no == national_id_no).first():
-        return jsonify({
-            'message': 'Another user exists with the provided National ID Number',
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({'message': 'Another user exists with the provided National ID Number',"successful": False,"status_code": 400}), 400
 
     # Check for required fields
     if not all([first_name, role, last_name, national_id_no, username, email, password]):
-        return jsonify({
-            'message': 'Missing required fields',
-
-            "successful": False,
-            "status_code": 400
-            }), 400
-
+        return jsonify({'message': 'Missing required fields',"successful": False,"status_code": 400}), 400
 
     # Check if username or email already exist
     if User.query.filter((User.username == username) | (User.email == email)).first():
-        return jsonify({
-            'message': 'Username or email already exists',
-
-            "successful": False,
-            "status_code": 409
-            }), 409
+        return jsonify({'message': 'Username or email already exists',"successful": False,"status_code": 409 }), 409
 
     # Extra checks for input data
     if not isinstance(first_name, str) or len(first_name) > 200:
-        return jsonify({
-            'message': 'First name must be a string and not more than 200 characters',
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({'message': 'First name must be a string and not more than 200 characters', "successful": False, "status_code": 400}), 400
 
     if middle_name and (not isinstance(middle_name, str) or len(middle_name) > 200):
-        return jsonify({
-            'message': 'Middle name must be a string and not more than 200 characters',
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({'message': 'Middle name must be a string and not more than 200 characters', "successful": False, "status_code": 400}), 400
 
     if not isinstance(last_name, str) or len(last_name) > 200:
-        return jsonify({
-            'message': 'Last name must be a string and not more than 200 characters',
-            "successful": False,
-            "status_code": 400
-            }), 400
-
+        return jsonify({'message': 'Last name must be a string and not more than 200 characters',"successful": False,"status_code": 400}), 400
 
     if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-        return jsonify({
-            'message': 'Invalid email address',
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({'message': 'Invalid email address',"successful": False,"status_code": 400}), 400
 
     if not isinstance(password, str) or len(password) < 6:
-        return jsonify({
-            'message': 'Password must be a string and at least 6 characters long',
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({ 'message': 'Password must be a string and at least 6 characters long', "successful": False, "status_code": 400}), 400
     
     if role not in ["manager", "merchandiser", "admin"]:
-        return jsonify({
-            'message': 'Role must be either manager, merchandiser or admin',
-            "successful": False,
-            "status_code": 400
-        }), 400
+        return jsonify({ 'message': 'Role must be either manager, merchandiser or admin',"successful": False, "status_code": 400}), 400
 
     # Hash the password before saving it
     hashed_password = bcrypt.generate_password_hash(password).decode("utf-8")
 
     # Create new user object
-    new_user = User(
-        first_name=first_name,
-        middle_name=middle_name,
-        last_name=last_name,
-        national_id_no=national_id_no,
-        username=username,
-        email=email,
-        password=hashed_password,
-        staff_no = staff_no,
-        role=role, 
-    )
+    new_user = User( first_name=first_name, middle_name=middle_name, last_name=last_name, national_id_no=national_id_no, username=username, email=email, password=hashed_password, staff_no = staff_no, role=role)
 
     access_token = create_access_token(identity=new_user.id)
 
@@ -330,20 +223,11 @@ def signup():
         db.session.commit()
         send_new_user_credentials(data)
         log_activity('User signed up', new_user.id)
-        return jsonify({
-            "successful": True,
-            "status_code": 201,
-            "access_token": access_token,
-            'message': 'User created successfully'
-        }), 201
+        return jsonify({"successful": True, "status_code": 201, "access_token": access_token, 'message': 'User created successfully'}), 201
 
     except Exception as err:
         db.session.rollback()
-        return jsonify({
-            "message": f"Failed to create user. Error: {err}",
-            "successful": False,
-            "status_code": 500
-            }), 500
+        return jsonify({"message": f"Failed to create user. Error: {err}", "successful": False,"status_code": 500 }), 500
 
 
 @app.route("/users/rest-user", methods=["PUT"])
@@ -353,30 +237,18 @@ def reset_user_password():
     data = request.get_json()
 
     if not data:
-        return jsonify({
-            "message": "Invalid request: Empty reques",
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({"message": "Invalid request: Empty reques","successful": False,"status_code": 400}), 400
     
     email = data.get("email")
     password = data.get("password")
 
     if not email or not password:
-        return jsonify({
-            "message": "Missing required fields",
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({"message": "Missing required fields", "successful": False, "status_code": 400}), 400
     
     user = User.query.filter_by(email=email).first()
 
     if not user:
-        return jsonify({
-            "message": "User not found",
-            "successful": False,
-            "status_code": 404
-            }), 404
+        return jsonify({"message": "User not found","successful": False,"status_code": 404}), 404
     
 
     hashed_password = bcrypt.generate_password_hash(password).decode("utf-8")
@@ -385,18 +257,10 @@ def reset_user_password():
     try:
         db.session.commit()
         send_user_new_password(data, user.first_name)
-        return jsonify({
-            "message": "Password reset successfully",
-            "successful": True,
-            "status_code": 200
-        }), 200
+        return jsonify({"message": "Password reset successfully", "successful": True, "status_code": 200}), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({
-            "message": f"An error occurred: {str(e)}",
-            "successful": False,
-            "status_code": 500
-        }), 500
+        return jsonify({ "message": f"An error occurred: {str(e)}", "successful": False, "status_code": 500}), 500
 
 
 def send_user_new_password(data, first_name):
@@ -480,35 +344,18 @@ def users():
     users = User.query.all()
 
     if not users:
-        return jsonify({
-            "message":"No users found",
-            "successful": False,
-            "status_code": 404
-            }), 404
+        return jsonify({ "message":"No users found", "successful": False, "status_code": 404 }), 404
     
     user_list = []
     for user in users:
-        user_info = {
-            'id': user.id,
-            'first_name': user.first_name,
-            'last_name': user.last_name,
-            'username': user.username,
-            'email': user.email,
-            'role': user.role,
-            'status': user.status, 
-            "staff_no": user.staff_no,
-            "avatar": user.avatar,
-        }
+        user_info = {'id': user.id, 'first_name': user.first_name, 'last_name': user.last_name, 'username': user.username, 'email': user.email, 'role': user.role, 'status': user.status,  "staff_no": user.staff_no, "avatar": user.avatar,}
         user_list.append(user_info)
 
     user_id = get_jwt_identity()
     log_activity('Viewed user list', user_id)
 
-    return jsonify({
-        "successful": True,
-        "status_code": 200,
-        'message': user_list
-        }), 200
+    return jsonify({ "successful": True, "status_code": 200, 'message': user_list}), 200
+
 
 @app.route('/users/<user_id>', methods=['GET'])
 @jwt_required()
@@ -516,34 +363,14 @@ def get_user(user_id):
     user = User.query.get(user_id)
 
     if not user:
-        return jsonify({
-            "message": "User not found",
-            "successful": False,
-            "status_code": 404
-        }), 404
+        return jsonify({"message": "User not found", "successful": False, "status_code": 404}), 404
 
-    user_info = {
-        'id': user.id,
-        'first_name': user.first_name,
-        'last_name': user.last_name,
-        'username': user.username,
-        'email': user.email,
-        'role': user.role,
-        'status': user.status,
-        "staff_no": user.staff_no,
-        "avatar": user.avatar,
-    }
+    user_info = {'id': user.id, 'first_name': user.first_name, 'last_name': user.last_name, 'username': user.username, 'email': user.email, 'role': user.role, 'status': user.status, "staff_no": user.staff_no, "avatar": user.avatar}
 
     user_id = get_jwt_identity()
     log_activity(f'Viewed details of user {user_id}', user_id)
 
-    return jsonify({
-        "successful": True,
-        "status_code": 200,
-        'message': user_info
-    }), 200
-
-from flask import jsonify
+    return jsonify({ "successful": True, "status_code": 200, 'message': user_info}), 200
 
 @app.route("/users/manager-route-plans/<int:manager_id>", methods=["GET"])
 @jwt_required()
@@ -552,11 +379,7 @@ def get_manager_route_plans(manager_id):
     route_plans = RoutePlan.query.filter_by(manager_id=manager_id).all()
 
     if not route_plans:
-        return jsonify({
-            'message': 'No route plans found for this manager',
-            "successful": False,
-            "status_code": 404
-        }), 404
+        return jsonify({'message': 'No route plans found for this manager', "successful": False, "status_code": 404}), 404
     
     route_plans_list = []
 
@@ -572,23 +395,10 @@ def get_manager_route_plans(manager_id):
                 'instructions': route.instructions,
                 'status': route.status,
                 "id": route.id,
-                # Include merchandiser details
-                'merchandiser_details': {
-                    'id': merchandiser.id,
-                    'first_name': merchandiser.first_name,
-                    'last_name': merchandiser.last_name,
-                    'email': merchandiser.email,
-                    'avatar': merchandiser.avatar
-                    # Add more details as needed
-                }
+                'merchandiser_details': {'id': merchandiser.id,'first_name': merchandiser.first_name,'last_name': merchandiser.last_name,'email': merchandiser.email,'avatar': merchandiser.avatar}
             })
 
-    return jsonify({
-        'message': route_plans_list,
-        "successful": True,
-        "status_code": 200
-    }), 200
-
+    return jsonify({'message': route_plans_list,"successful": True,"status_code": 200}), 200
 
 @app.route("/users/send-notifications", methods=["POST"])
 @jwt_required()
@@ -597,11 +407,7 @@ def send_notification():
     data = request.get_json()
 
     if not data:
-        return jsonify({
-                "message": "Invalid request: No data provided",
-                "successful": False,
-                "status_code": 400
-                }), 400
+        return jsonify({"message": "Invalid request: No data provided","successful": False, "status_code": 400}), 400
     
     staff_no = data.get("staff_no")
     content = data.get("content")
@@ -610,73 +416,36 @@ def send_notification():
     merchandiser_id =data.get("merchandiser_id")
 
     if not all([staff_no, content, timestamp, status]):
-        return jsonify({
-            "message": "Missing required fields",
-            "successful": False,
-            "status_code": 400
-        }), 400
-    
+        return jsonify({"message": "Missing required fields", "successful": False, "status_code": 400}), 400
     
     if not isinstance(content, str) or not isinstance(status, str) or not isinstance(timestamp, str):
-        return jsonify({
-                "message": "Content, time, and status must be letters",
-                "successful": False,
-                "status_code": 400
-                }), 400
-    
+        return jsonify({"message": "Content, time, and status must be letters", "successful": False, "status_code": 400}), 400
 
     try:
         datetime.strptime(timestamp, "%Y-%m-%dT%H:%M")
     except ValueError:
-        return jsonify({
-            "message": "Invalid timestamp format. Use YYYY-MM-DDTHH:MM",
-            "successful": False,
-            "status_code": 400
-        }), 400
-    
+        return jsonify({"message": "Invalid timestamp format. Use YYYY-MM-DDTHH:MM", "successful": False, "status_code": 400}), 400
     
     manager = User.query.filter_by(staff_no=staff_no).first()
 
     if not manager:
-        return jsonify({
-                "message": "Invalid manager's staff number.",
-                "successful": False,
-                "status_code": 400
-                }), 400
+        return jsonify({"message": "Invalid manager's staff number.", "successful": False, "status_code": 400}), 400
     
     merchandiser = User.query.filter_by(id=merchandiser_id).first()
     if not merchandiser:
-        return jsonify({
-            "message": "Invalid merchandiser details, login again.",
-            "successful": False,
-            "status_code": 404
-        }), 404
+        return jsonify({"message": "Invalid merchandiser details, login again.", "successful": False, "status_code": 404}), 404
     
-    notification = Notification(
-        recipient_id=manager.id,
-        content=content,
-        timestamp=timestamp,
-        status=status
-    )
+    notification = Notification(recipient_id=manager.id, content=content, timestamp=timestamp, status=status)
 
     try:
         db.session.add(notification)
         db.session.commit()
         send_manager_email(data, manager, merchandiser)
-        return jsonify({
-                "message": "Notification sent successfully",
-                "successful": True,
-                "status_code": 201
-                }), 201
+        return jsonify({"message": "Notification sent successfully", "successful": True, "status_code": 201}), 201
 
     except Exception as err:
         db.session.rollback()
-        return jsonify({
-                "message": f"Error: {err}",
-                "successful": False,
-                "status_code": 500
-                }), 500
-    
+        return jsonify({"message": f"Error: {err}", "successful": False, "status_code": 500}), 500
     
 def send_manager_email(data, manager, merchandiser):
 
@@ -717,8 +486,6 @@ def send_manager_email(data, manager, merchandiser):
         server.login(username, password)
         server.sendmail(username, manager.email, msg.as_string())
 
-
-
 @app.route("/users/route-plans/<int:merchandiser_id>", methods=["GET"])
 @jwt_required()
 def get_merchandiser_route_plans(merchandiser_id):
@@ -726,29 +493,13 @@ def get_merchandiser_route_plans(merchandiser_id):
     route_plans = RoutePlan.query.filter_by(merchandiser_id=merchandiser_id).all()
 
     if not route_plans:
-        return jsonify({
-            'message': 'You have not been assigned any routes',
-            "successful": False,
-            "status_code": 404
-        }), 404
+        return jsonify({'message': 'You have not been assigned any routes', "successful": False, "status_code": 404}), 404
     
     route_plans_list = []
 
     for route in route_plans:
-        route_plans_list.append({
-            'merchandiser_id': route.merchandiser_id,
-            'manager_id': route.manager_id,
-            'date_range': route.date_range,
-            'instructions': route.instructions,
-            'status': route.status,
-            "id": route.id
-        })
-
-    return jsonify({
-        'message': route_plans_list,
-        "successful": True,
-        "status_code": 200
-    }), 200
+        route_plans_list.append({'merchandiser_id': route.merchandiser_id, 'manager_id': route.manager_id, 'date_range': route.date_range, 'instructions': route.instructions, 'status': route.status, "id": route.id})
+    return jsonify({'message': route_plans_list,"successful": True,"status_code": 200}), 200
 
 
 def send_email_to_merchandiser(data):
@@ -763,11 +514,7 @@ def send_email_to_merchandiser(data):
     merchandiser = User.query.filter_by(staff_no=staff_no).first()
 
     if not manager:
-        return  jsonify({
-                "message": "Invalid manager",
-                "successful": False,
-                "status_code": 400
-                }), 400
+        return  jsonify({"message": "Invalid manager","successful": False,"status_code": 400}), 400
 
     subject = 'Route Plans'
 
@@ -811,11 +558,7 @@ def get_manager_routes(id):
     routes = RoutePlan.query.filter_by(manager_id=id).all()
 
     if not routes:
-        return jsonify({
-                'message': 'You have no route plans found',
-                "successful": False,
-                "status_code": 404
-                }), 404
+        return jsonify({'message': 'You have no route plans found',"successful": False,"status_code": 404}), 404
     
     routes_list = []
 
@@ -830,21 +573,9 @@ def get_manager_routes(id):
             merchandiser_name = None
             staff_no = None
         
-        routes_list.append({
-            "id": route.id,
-            "instructions": route.instructions,
-            "manager_id": route.manager_id,
-            "date_range": route.date_range,
-            "merchandiser_name": merchandiser_name,
-            "staff_no": staff_no,
-            "status": route.status
-        })
+        routes_list.append({ "id": route.id, "instructions": route.instructions, "manager_id": route.manager_id, "date_range": route.date_range, "merchandiser_name": merchandiser_name, "staff_no": staff_no, "status": route.status})
 
-    return jsonify({
-        "successful": True,
-        "status_code": 200,
-        "message": routes_list
-    }), 200
+    return jsonify({"successful": True,"status_code": 200,"message": routes_list}), 200
 
 
 @app.route("/users/delete-route-plans/<int:id>", methods=["DELETE"])
@@ -853,28 +584,16 @@ def delete_route_plans(id):
     route = RoutePlan.query.filter_by(id=id).first()
 
     if not route:
-        return jsonify({
-                'message': 'No route plans found',
-                "successful": False,
-                "status_code": 404
-                }), 404
+        return jsonify({'message': 'No route plans found',"successful": False,"status_code": 404}), 404
     
     try:
         db.session.delete(route)
         db.session.commit()
-        return jsonify({
-                'message': 'Route deleted successfully',
-                "successful": True,
-                "status_code": 204
-                }), 204
+        return jsonify({'message': 'Route deleted successfully', "successful": True, "status_code": 204}), 204
 
     except Exception as err:
         db.session.rollback()
-        return jsonify({
-                'message': f'There was an error deleting the route {err}',
-                "successful": False,
-                "status_code": 500
-                }), 500
+        return jsonify({'message': f'There was an error deleting the route {err}',"successful": False, "status_code": 500}), 500
     
 
 @app.route("/users/modify-route/<int:id>", methods=["PUT"])
@@ -883,11 +602,7 @@ def modify_route(id):
     route = RoutePlan.query.filter_by(id=id).first()
 
     if not route:
-        return jsonify({
-            'message': 'Route plan does not exist',
-            "successful": False,
-            "status_code": 404
-        }), 404
+        return jsonify({'message': 'Route plan does not exist',"successful": False,    "status_code": 404}), 404
 
     data = request.get_json()
     
@@ -905,30 +620,18 @@ def modify_route(id):
 
             route.instructions = json.dumps(existing_instructions)
         except Exception as err:
-            return jsonify({
-                'message': f'Error processing instructions: {err}',
-                "successful": False,
-                "status_code": 400
-            }), 400
+            return jsonify({'message': f'Error processing instructions: {err}',"successful": False,"status_code": 400 }), 400
 
     if 'status' in data:
         route.status = data['status']
 
     try:
         db.session.commit()
-        return jsonify({
-            'message': 'Route plan updated successfully',
-            "successful": True,
-            "status_code": 200
-        }), 200
+        return jsonify({'message': 'Route plan updated successfully', "successful": True,"status_code": 200}), 200
 
     except Exception as err:
         db.session.rollback()
-        return jsonify({
-            'message': f'Error committing to database: {err}',
-            "successful": False,
-            "status_code": 500
-        }), 500
+        return jsonify({'message': f'Error committing to database: {err}',"successful": False, "status_code": 500 }), 500
 
 @app.route('/users/route-plans', methods=['GET', 'POST'])
 @jwt_required()
@@ -937,44 +640,23 @@ def route_plan_details():
     if request.method == 'GET':
         route_plans = RoutePlan.query.all()
         if not route_plans:
-            return jsonify({
-                'message': 'No route plans found',
-                "successful": False,
-                "status_code": 404
-                }), 404
+            return jsonify({'message': 'No route plans found', "successful": False, "status_code": 404}), 404
 
         route_plan_list = []
         for route_plan in route_plans:
-            route_plan_info = {
-                'id': route_plan.id,
-                'merchandiser_id': route_plan.merchandiser_id,
-                'manager_id': route_plan.manager_id,
-                'date_range': route_plan.date_range,
-                'instructions': route_plan.instructions,
-                'status': route_plan.status
-            }
+            route_plan_info = {'id': route_plan.id, 'merchandiser_id': route_plan.merchandiser_id,'manager_id': route_plan.manager_id, 'date_range': route_plan.date_range, 'instructions': route_plan.instructions, 'status': route_plan.status}
             route_plan_list.append(route_plan_info)
 
         user_id = get_jwt_identity()
         log_activity('Viewed merchandiser routes', user_id)
 
-        return jsonify({
-            "successful": True,
-            "status_code": 200,
-            'message': route_plan_list
-            }), 200
+        return jsonify({ "successful": True,"status_code": 200,'message': route_plan_list }), 200
 
     elif request.method == 'POST':
         data = request.get_json()
         if not data:
-            return jsonify({
-                "message": "Invalid request",
-                "successful": False,
-                "status_code": 400
-                }), 400
+            return jsonify({"message": "Invalid request","successful": False,"status_code": 400}), 400
 
-        # Extract required fields from the JSON data
-        # merchandiser_id = data.get('merchandiser_id')
         manager_id = data.get('manager_id')
         date_range = data.get('date_range')
         instructions = data.get('instructions')
@@ -985,66 +667,32 @@ def route_plan_details():
 
         # Check for required fields
         if not all([staff_no, manager_id, date_range, status]):
-            return jsonify({
-                'message': 'Missing required fields',
-                "successful": False,
-                "status_code": 400
-                }), 400
+            return jsonify({'message': 'Missing required fields',"successful": False, "status_code": 400}), 400
         
-        # Check if data adheres to model specifications
         try:
             staff_no = int(staff_no)
             manager_id = int(manager_id)
         except ValueError:
-            return jsonify({
-                'message': 'Staff number and Manager ID must be integers',
-                "successful": False,
-                "status_code": 400
-            }), 400
+            return jsonify({'message': 'Staff number and Manager ID must be integers',"successful": False, "status_code": 400}), 400
         
         if not isinstance(date_range, dict):
-            return jsonify({
-                'message': 'Date range must be a dictionary',
-                "successful": False,
-                "status_code": 400
-            }), 400
+            return jsonify({'message': 'Date range must be a dictionary',"successful": False,"status_code": 400}), 400
 
         start_date = date_range.get('start_date')
         end_date = date_range.get('end_date')
 
         if not all([start_date, end_date]):
-            return jsonify({
-                'message': 'Missing start_date or end_date in date_range',
-                "successful": False,
-                "status_code": 400
-            }), 400
+            return jsonify({'message': 'Missing start_date or end_date in date_range', "successful": False,"status_code": 400}), 400
 
         if status not in ['complete', 'pending']:
-            return jsonify({
-                'message': 'Status must be either "complete" or "pending"',
-                "successful": False,
-                "status_code": 400
-                }), 400
+            return jsonify({'message': 'Status must be either "complete" or "pending"',"successful": False,"status_code": 400}), 400
         
-
         user = User.query.filter_by(staff_no=staff_no, role='merchandiser').first()
 
         if not user:
-            return jsonify({
-                'message': 'Invalid staff number or user is not a merchandiser',
-                "successful": False,
-                "status_code": 400
-            }), 400
+            return jsonify({'message': 'Invalid staff number or user is not a merchandiser', "successful": False, "status_code": 400}), 400
 
-
-        # Create a new route plan object
-        new_route_plan = RoutePlan(
-            merchandiser_id=user.id,
-            manager_id=manager_id,
-            date_range=date_range,
-            instructions=instructions_json,
-            status=status
-        )
+        new_route_plan = RoutePlan(merchandiser_id=user.id,manager_id=manager_id, date_range=date_range,instructions=instructions_json,status=status)
 
         try:
             db.session.add(new_route_plan)
@@ -1052,22 +700,11 @@ def route_plan_details():
             send_email_to_merchandiser(data)
             user_id = get_jwt_identity()
             log_activity('Created merchandiser routes', user_id)
-            return jsonify({
-                'message': 'Route plan created successfully',
-                "successful": True,
-                "status_code": 201
-                }), 201
+            return jsonify({'message': 'Route plan created successfully', "successful": True, "status_code": 201}), 201
         
         except Exception as err:
             db.session.rollback()
-            return jsonify({
-                'message': f"Internal server error. Error: {err}",
-                "successful": False,
-                "status_code": 500
-                }), 500
-
-
-
+            return jsonify({'message': f"Internal server error. Error: {err}","successful": False,"status_code": 500}), 500
 
 @app.route("/users/change-route-status/<int:id>", methods=["PUT"])
 @jwt_required()
@@ -1075,46 +712,26 @@ def change_route_status(id):
     data = request.get_json()
 
     if not data:
-        return jsonify({
-            'message': 'Invalid request: Empty data',
-            "successful": False,
-            "status_code": 400
-        }), 400
+        return jsonify({'message': 'Invalid request: Empty data', "successful": False, "status_code": 400}), 400
 
     instruction_id = data.get("instruction_id")
     status = data.get("status").lower() if data.get("status") else None
 
     if not instruction_id or not status:
-        return jsonify({
-            'message': 'Missing required fields',
-            "successful": False,
-            "status_code": 400
-        }), 400
+        return jsonify({'message': 'Missing required fields', "successful": False, "status_code": 400}), 400
 
     if status not in ["pending", "complete"]:
-        return jsonify({
-            'message': 'Status must either be "complete" or "pending"',
-            "successful": False,
-            "status_code": 400
-        }), 400
+        return jsonify({ 'message': 'Status must either be "complete" or "pending"', "successful": False, "status_code": 400}), 400
 
     route_plan = RoutePlan.query.filter_by(id=id).first()
 
     if not route_plan:
-        return jsonify({
-            'message': 'Route plan not found',
-            "successful": False,
-            "status_code": 404
-        }), 404
+        return jsonify({'message': 'Route plan not found', "successful": False, "status_code": 404}), 404
 
     try:
         instructions = json.loads(route_plan.instructions)
     except json.JSONDecodeError:
-        return jsonify({
-            'message': 'Error decoding instructions JSON',
-            "successful": False,
-            "status_code": 500
-        }), 500
+        return jsonify({'message': 'Error decoding instructions JSON',"successful": False, "status_code": 500}), 500
 
     instruction_found = False
 
@@ -1125,29 +742,17 @@ def change_route_status(id):
             break
 
     if not instruction_found:
-        return jsonify({
-            'message': 'Instruction not found',
-            "successful": False,
-            "status_code": 404
-        }), 404
+        return jsonify({'message': 'Instruction not found', "successful": False, "status_code": 404}), 404
 
     route_plan.instructions = json.dumps(instructions)
 
     try:
         db.session.commit()
-        return jsonify({
-            'message': 'Route plan status updated successfully',
-            "successful": True,
-            "status_code": 201
-        }), 201
+        return jsonify({ 'message': 'Route plan status updated successfully', "successful": True, "status_code": 201}), 201
     
     except Exception as e:
         db.session.rollback()
-        return jsonify({
-            'message': 'Error saving changes to the database',
-            "successful": False,
-            "status_code": 500
-        }), 500
+        return jsonify({'message': 'Error saving changes to the database', "successful": False, "status_code": 500}), 500
 
     
 @app.route('/users/route-plans/<int:route_plan_id>', methods=['PUT'])
@@ -1159,20 +764,12 @@ def update_route_plan(route_plan_id):
     route_plan = db.session.get(RoutePlan, route_plan_id)
 
     if not route_plan:
-        return jsonify({
-            'message': 'Route plan not found',
-            "successful": False,
-            "status_code": 404
-            }), 404
+        return jsonify({'message': 'Route plan not found',"successful": False,"status_code": 404}), 404
     
     # Check if data adheres to model specifications
     if 'merchandiser_id' in data:
         if not isinstance(data['merchandiser_id'], int) or not isinstance(data["manager_id"], int):
-            return jsonify({
-                'message': 'Merchandiser and manager IDs must be an integer',
-                "successful": False,
-                "status_code": 400
-                }), 400
+            return jsonify({'message': 'Merchandiser and manager IDs must be an integer', "successful": False, "status_code": 400}), 400
 
     if 'date_range' in data:
         # Attempt to parse the date range string
@@ -1183,27 +780,15 @@ def update_route_plan(route_plan_id):
             route_plan.start_date = start_date
             route_plan.end_date = end_date
         except ValueError:
-            return jsonify({
-                'message': 'Invalid date format. Please provide dates in the format: "dd/mm/yyyy hh:mm am/pm"',
-                "successful": False,
-                "status_code": 400
-            }), 400
+            return jsonify({'message': 'Invalid date format. Please provide dates in the format: "dd/mm/yyyy hh:mm am/pm"', "successful": False, "status_code": 400}), 400
 
     if 'instructions' in data:
         if not isinstance(data['instructions'], str):
-            return jsonify({
-                'message': 'Instructions must be a string',
-                "successful": False,
-                "status_code": 400
-                }), 400
+            return jsonify({'message': 'Instructions must be a string', "successful": False, "status_code": 400}), 400
 
     if 'status' in data:
         if data['status'] not in ['complete', 'pending']:
-            return jsonify({
-                'message': 'Status must be either "complete" or "pending"',
-                "successful": False,
-                "status_code": 400
-                }), 400
+            return jsonify({ 'message': 'Status must be either "complete" or "pending"', "successful": False, "status_code": 400}), 400
     # Update route plan attributes
     route_plan.merchandiser_id = data.get('merchandiser_id', route_plan.merchandiser_id)
     route_plan.manager_id = data.get('manager_id', route_plan.manager_id)
@@ -1216,19 +801,11 @@ def update_route_plan(route_plan_id):
 
         user_id = get_jwt_identity()
         log_activity(f'Edited merchandiser route. Route id : {route_plan_id}', user_id)
-        return jsonify({
-            'message': 'Route plan updated successfully',
-            "successful": True,
-            "status_code": 201
-            }), 201
+        return jsonify({'message': 'Route plan updated successfully', "successful": True, "status_code": 201}), 201
 
     except Exception as err:
         db.session.rollback()
-        return jsonify({
-            'message': f"Internal server error. Error: {err}",
-            "successful": False,
-            "status_code": 500
-            }), 500
+        return jsonify({'message': f"Internal server error. Error: {err}", "successful": False, "status_code": 500 }), 500
 
 
 @app.route('/users/locations', methods=['GET', 'POST'])
@@ -1251,31 +828,17 @@ def location_details():
                                            .all()
 
         if not latest_locations_query:
-            return jsonify({
-                'message': 'No locations found',
-                "successful": False,
-                "status_code": 404
-                }), 404
+            return jsonify({ 'message': 'No locations found', "successful": False,"status_code": 404}), 404
 
         location_list = []
         for location in latest_locations_query:
-            location_info = {
-                'id': location.id,
-                'merchandiser_id': location.merchandiser_id,
-                'timestamp': location.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                'latitude': location.latitude,
-                'longitude': location.longitude
-            }
+            location_info = {'id': location.id,'merchandiser_id': location.merchandiser_id,'timestamp': location.timestamp.strftime('%Y-%m-%d %H:%M:%S'),'latitude': location.latitude,'longitude': location.longitude}
             location_list.append(location_info)
 
         user_id = get_jwt_identity()
         log_activity('Added location', user_id)
 
-        return jsonify({
-            "successful": True,
-            "status_code": 200,
-            'message': location_list
-            }), 200
+        return jsonify({"successful": True, "status_code": 200, 'message': location_list}), 200
     
     elif request.method == 'POST':
 
@@ -1288,11 +851,7 @@ def location_details():
 
         # Check for required fields
         if not all([merchandiser_id, latitude, longitude]):
-            return jsonify({
-                'message': 'Missing required fields',
-                "successful": False,
-                "status_code": 400
-                }), 400
+            return jsonify({'message': 'Missing required fields', "successful": False, "status_code": 400}), 400
         
         # Check data types and range
         try:
@@ -1301,27 +860,14 @@ def location_details():
             longitude = float(longitude)
 
         except ValueError:
-            return jsonify({
-                'message': 'Merchandiser ID must be an integer, and latitude and longitude must be in decimals',
-                "successful": False,
-                "status_code": 400
-                }), 400
+            return jsonify({'message': 'Merchandiser ID must be an integer, and latitude and longitude must be in decimals',"successful": False, "status_code": 400}), 400
 
         # Check latitude and longitude range
         if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
-            return jsonify({
-                'message': 'Invalid latitude or longitude values',
-                "successful": False,
-                "status_code": 400
-                }), 400
+            return jsonify({'message': 'Invalid latitude or longitude values',"successful": False,"status_code": 400}), 400
 
         # Create a new location object
-        new_location = Location(
-            merchandiser_id=merchandiser_id,
-            timestamp=datetime.now(timezone.utc),
-            latitude=latitude,
-            longitude=longitude
-        )
+        new_location = Location(merchandiser_id=merchandiser_id, timestamp=datetime.now(timezone.utc),  latitude=latitude, longitude=longitude)
 
         try:
             db.session.add(new_location)
@@ -1330,47 +876,27 @@ def location_details():
             user_id = get_jwt_identity()
             log_activity('Added location', user_id)
 
-            return jsonify({
-                'message': 'Location created successfully',
-                "successful": True,
-                "status_code": 201
-                }), 201
+            return jsonify({'message': 'Location created successfully',"successful": True,"status_code": 201}), 201
         
         except Exception as err:
             db.session.rollback()
-            return jsonify({
-                'message': f"Internal server error. Error: {err}",
-                "successful": False,
-                "status_code": 500
-                }), 500
+            return jsonify({ 'message': f"Internal server error. Error: {err}", "successful": False, "status_code": 500}), 500
         
 
 @app.route("/users/login", methods=["POST"])
 def login_user():
-
     data = request.get_json()
 
-    
     if not data:
-        return jsonify({
-            "message": "Invalid request",
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({"message": "Invalid request", "successful": False, "status_code": 400}), 400
     
     email = data.get("email").lower() if data.get('email') else None
     password = data.get("password")
-
     
     if not email or not password:
-        return jsonify({
-            "message": "Email and password required",
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({"message": "Email and password required", "successful": False, "status_code": 400}), 400
     
     user = User.query.filter_by(email=email).first()
-
     
     if user:
 
@@ -1378,60 +904,27 @@ def login_user():
 
         if user.status == "blocked":
             
-            return jsonify({
-                "message": "Access denied, please contact system administrator",
-                "successful": False,
-                "status_code": 409
-                }), 409
+            return jsonify({"message": "Access denied, please contact system administrator", "successful": False, "status_code": 409}), 409
         
-    
         if bcrypt.check_password_hash(user.password, password):
 
             if datetime.now(timezone.utc) - user.last_password_change.replace(tzinfo=timezone.utc) > timedelta(days=14):
                 
-                return jsonify({
-                    "message": "Your password has expired",
-                    "successful": False,
-                    "status_code": 403
-                    }), 403
+                return jsonify({"message": "Your password has expired", "successful": False,"status_code": 403}), 403
             
-
-            user_data = {
-                "user_id": user.id,
-                "role": user.role,
-                "username": user.username,
-                "email": user.email,
-                "last_name": user.last_name,
-                "avatar": user.avatar,
-                "last_login": datetime.now(timezone.utc).isoformat()
-                         }
+            user_data = {"user_id": user.id, "role": user.role, "username": user.username, "email": user.email, "last_name": user.last_name, "avatar": user.avatar, "last_login": datetime.now(timezone.utc).isoformat()}
             
             access_token = create_access_token(identity=user_data)
             user.last_login = datetime.now(timezone.utc)
             db.session.commit()
 
-            
-
             log_activity(f'Logged in', user_id)
-            return jsonify({
-                "successful": True,
-                "status_code": 201,
-                "access_token": access_token,
-                "message": user_data
-                            }), 201
+            return jsonify({"successful": True, "status_code": 201, "access_token": access_token, "message": user_data}), 201
         
         else:
-            return jsonify({
-                "message": "Invalid credentials",
-                "successful": False,
-                "status_code": 401
-                }), 401
+            return jsonify({"message": "Invalid credentials", "successful": False, "status_code": 401}), 401
     else:
-        return jsonify({
-            "message": "You do not have an account, please signup.",
-            "successful": False,
-            "status_code": 404
-            }), 404
+        return jsonify({"message": "You do not have an account, please signup.", "successful": False, "status_code": 404}), 404
     
 
 @app.route("/users/change-password", methods=["PUT"])
@@ -1440,42 +933,21 @@ def change_password():
     data = request.get_json()
 
     if not data:
-        return jsonify({
-            "message": "Invalid request",
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({"message": "Invalid request", "successful": False, "status_code": 400}), 400
     
     old_password = data.get("old_password")
     new_password = data.get("new_password")
-    email = data.get("email")
-
-    # new_password must be string and length must be <= 120
-     
+    email = data.get("email") 
 
     if not old_password or not new_password or not email:
-        return jsonify({
-
-            "message": "Missing required fields",
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({"message": "Missing required fields", "successful": False, "status_code": 400}), 400
     
     if old_password == new_password:
-        return jsonify({
-
-            "message": "Old password and new password cannot be the same",
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({"message": "Old password and new password cannot be the same", "successful": False, "status_code": 400}), 400
 
     if not isinstance(new_password, str) or len(new_password) < 6:
       
-        return jsonify({
-            'message': 'Password must be a string and at least 6 characters long',
-            "successful": False,
-            "status_code": 400
-            }), 400
+        return jsonify({ 'message': 'Password must be a string and at least 6 characters long', "successful": False, "status_code": 400}), 400
 
     user = User.query.filter_by(email=email).first()
     
@@ -1496,31 +968,16 @@ def change_password():
                 user_id = user_id
 
                 log_activity(f'Changed password.', user_id)
-                return jsonify({
-                    "message": "Password changed successfully",
-                    "successful": True,
-                    "status_code": 201
-                                }), 201
+                return jsonify({"message": "Password changed successfully", "successful": True, "status_code": 201}), 201
             except Exception as err:
                 db.session.rollback()
-                return jsonify({
-                    "message": f"Failed to change signature. Error{err}",
-                    "successful": False,
-                    "status_code": 500
-                }), 500
+                return jsonify({"message": f"Failed to change signature. Error{err}", "successful": False, "status_code": 500}), 500
           
         else:
-            return jsonify({
-                "message": "Invalid old password",
-                "successful": False,
-                "status_code": 401
-                }), 401
+            return jsonify({"message": "Invalid old password", "successful": False, "status_code": 401}), 401
     else:
-        return jsonify({
-            "message": "User not found",
-            "successful": False,
-            "status_code": 404
-            }), 404
+        return jsonify({ "message": "User not found", "successful": False,"status_code": 404}), 404
+
 
 @app.route("/users/<int:user_id>/edit-status", methods=["PUT"])
 @jwt_required()
@@ -1528,27 +985,15 @@ def edit_status(user_id):
     data = request.get_json()
 
     if not data:
-        return jsonify({
-            "message": "Invalid request",
-            "successful": False,
-            "status_code": 400
-        }), 400
+        return jsonify({ "message": "Invalid request", "successful": False, "status_code": 400}), 400
 
     new_status = data.get("status")
 
     if not new_status:
-        return jsonify({
-            "message": "Missing required fields",
-            "successful": False,
-            "status_code": 400
-        }), 400
+        return jsonify({"message": "Missing required fields","successful": False, "status_code": 400}), 400
 
     if new_status not in ["active", "blocked"]:
-        return jsonify({
-            "message": "Invalid status value",
-            "successful": False,
-            "status_code": 400
-        }), 400
+        return jsonify({"message": "Invalid status value","successful": False, "status_code": 400}), 400
 
     user = User.query.get(user_id)
 
@@ -1558,52 +1003,29 @@ def edit_status(user_id):
         try:
             db.session.commit()
             log_activity(f'Changed status to {new_status}.', user.id)
-            return jsonify({
-                "message": "Status updated successfully",
-                "successful": True,
-                "status_code": 200
-            }), 200
+            return jsonify({"message": "Status updated successfully", "successful": True, "status_code": 200}), 200
         except Exception as err:
             db.session.rollback()
-            return jsonify({
-                "message": f"Failed to update status. Error: {err}",
-                "successful": False,
-                "status_code": 500
-            }), 500
+            return jsonify({"message": f"Failed to update status. Error: {err}", "successful": False, "status_code": 500}), 500
     else:
-        return jsonify({
-            "message": "User not found",
-            "successful": False,
-            "status_code": 404
-        }), 404
-    
+        return jsonify({"message": "User not found", "successful": False, "status_code": 404}), 404
+
+
 @app.route("/users/<int:user_id>/edit-role", methods=["PUT"])
 @jwt_required()
 def edit_role(user_id):
     data = request.get_json()
 
     if not data:
-        return jsonify({
-            "message": "Invalid request",
-            "successful": False,
-            "status_code": 400
-        }), 400
+        return jsonify({"message": "Invalid request", "successful": False, "status_code": 400}), 400
 
     new_role = data.get("role")
 
     if not new_role:
-        return jsonify({
-            "message": "Missing required fields",
-            "successful": False,
-            "status_code": 400
-        }), 400
+        return jsonify({"message": "Missing required fields", "successful": False, "status_code": 400}), 400
 
     if new_role not in ["admin", "merchandiser", "manager"]:
-        return jsonify({
-            "message": "Invalid role value",
-            "successful": False,
-            "status_code": 400
-        }), 400
+        return jsonify({"message": "Invalid role value", "successful": False, "status_code": 400}), 400
 
     user = User.query.get(user_id)
 
@@ -1613,25 +1035,12 @@ def edit_role(user_id):
         try:
             db.session.commit()
             log_activity(f'Changed role to {new_role}.', user.id)
-            return jsonify({
-                "message": "Role updated successfully",
-                "successful": True,
-                "status_code": 200
-            }), 200
+            return jsonify({"message": "Role updated successfully", "successful": True, "status_code": 200}), 200
         except Exception as err:
             db.session.rollback()
-            return jsonify({
-                "message": f"Failed to update role. Error: {err}",
-                "successful": False,
-                "status_code": 500
-            }), 500
+            return jsonify({"message": f"Failed to update role. Error: {err}", "successful": False, "status_code": 500}), 500
     else:
-        return jsonify({
-            "message": "User not found",
-            "successful": False,
-            "status_code": 404
-        }), 404
-
+        return jsonify({"message": "User not found", "successful": False, "status_code": 404}), 404
 
 
 @app.route("/users/edit-profile-image/<int:id>", methods=["PUT"])
@@ -1690,160 +1099,65 @@ def edit_user_image(id):
                         }), 404
 
 
-@app.route("/users/get-logs", methods=["GET"])
-@jwt_required()
-def get_users_activities():
-
-    try:
-        activity_logs = ActivityLog.query.all()
-
-        if not activity_logs:
-            return jsonify({
-                "message": "No logs available",
-                "successful": False,
-                "status_code": 400
-                }), 400
-
-        activity_logs_data = []
-
-        for log in activity_logs:
-            log_data = {
-                "id": log.id,
-                "user_id": log.user_id,
-                "action": log.action,
-                "timestamp": log.timestamp.strftime('%Y-%m-%d %H:%M:%S') 
-            }
-            activity_logs_data.append(log_data)
-        
-        user_id = get_jwt_identity()
-        # user_id = 3
-        log_activity('Viewed activity logs', user_id)
-
-        return jsonify({
-
-            "message": activity_logs_data,
-            "successful": True,
-            "status_code": 200
-                        }), 200
-    
-    except Exception as e:
-        return jsonify({
-            "message": str(e),
-            "successful": False,
-            "status_code": 500
-            }), 500
-
-
 @jwt_required()
 def manage_notifications(user_id):
     # Ensure that the user_id from the URL matches the one in the JWT token
     jwt_user_id = get_jwt_identity()
     if user_id != jwt_user_id:
-        return jsonify({
-            "message": "Unauthorized access",
-            "successful": False,
-            "status_code": 401
-        }), 401
+        return jsonify({"message": "Unauthorized access", "successful": False, "status_code": 401}), 401
 
     if request.method == "GET":
         try:
             notifications = Notification.query.filter_by(recipient_id=user_id).all()
 
             if not notifications:
-                return jsonify({
-                    "message": "No notifications found",
-                    "successful": False,
-                    "status_code": 404
-                }), 404
+                return jsonify({"message": "No notifications found", "successful": False, "status_code": 404}), 404
 
             notification_list = []
             for notification in notifications:
-                notification_info = {
-                    "id": notification.id,
-                    "recipient_id": notification.recipient_id,
-                    "content": notification.content,
-                    "timestamp": notification.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                    "status": notification.status
-                }
+                notification_info = {"id": notification.id, "recipient_id": notification.recipient_id, "content": notification.content, "timestamp": notification.timestamp.strftime('%Y-%m-%d %H:%M:%S'), "status": notification.status}
                 notification_list.append(notification_info)
 
             log_activity('Viewed notifications', user_id)
-            return jsonify({
-                "message": notification_list,
-                "successful": True,
-                "status_code": 200
-            }), 200
+            return jsonify({ "message": notification_list, "successful": True, "status_code": 200}), 200
 
         except Exception as err:
-            return jsonify({
-                "message": str(err),
-                "successful": False,
-                "status_code": 500
-            }), 500
+            return jsonify({"message": str(err), "successful": False,"status_code": 500}), 500
 
     elif request.method == "POST":
         data = request.get_json()
 
         if not data:
-            return jsonify({
-                "message": "Invalid data",
-                "successful": False,
-                "status_code": 400
-            }), 400
+            return jsonify({"message": "Invalid data","successful": False, "status_code": 400}), 400
 
         content = data.get("content")
         recipient_email = data.get("recipient_email")
 
         if not content:
-            return jsonify({
-                "message": "Content is required",
-                "successful": False,
-                "status_code": 400
-            }), 400
+            return jsonify({"message": "Content is required","successful": False,"status_code": 400}), 400
 
         if not recipient_email:
-            return jsonify({
-                "message": "Recipient email is required",
-                "successful": False,
-                "status_code": 400
-            }), 400
+            return jsonify({"message": "Recipient email is required", "successful": False, "status_code": 400}), 400
 
         try:
             user = User.query.filter_by(email=recipient_email).one()
             recipient_id = user.id
 
-            new_notification = Notification(
-                recipient_id=recipient_id,
-                content=content,
-                timestamp=datetime.now(timezone.utc),
-                status="unread"
-            )
+            new_notification = Notification(recipient_id=recipient_id, content=content, timestamp=datetime.now(timezone.utc),status="unread")
 
             db.session.add(new_notification)
             db.session.commit()
 
             log_activity(f'Created notification: {content}', user_id)
 
-            return jsonify({
-                "message": "Notification created successfully",
-                "successful": True,
-                "status_code": 201
-            }), 201
+            return jsonify({ "message": "Notification created successfully", "successful": True, "status_code": 201}), 201
 
         except NoResultFound:
-            return jsonify({
-                "message": f"User with email {recipient_email} not found",
-                "successful": False,
-                "status_code": 404
-            }), 404
+            return jsonify({"message": f"User with email {recipient_email} not found","successful": False, "status_code": 404}), 404
 
         except Exception as err:
             db.session.rollback()
-            return jsonify({
-                "message": str(err),
-                "successful": False,
-                "status_code": 500
-            }), 500
+            return jsonify({"message": str(err),"successful": False, "status_code": 500}), 500
 
 
 @app.route("/users/notifications/<int:notification_id>", methods=["PUT", "DELETE"])
@@ -1853,30 +1167,18 @@ def update_or_delete_notification(notification_id):
     notification = Notification.query.get(notification_id)
 
     if not notification:
-        return jsonify({
-            "message": "Notification not found",
-            "successful": False,
-            "status_code": 404
-                        }), 404
+        return jsonify({"message": "Notification not found","successful": False,"status_code": 404}), 404
 
     if request.method == "PUT":
         
         data = request.get_json()
         if not data:
-            return jsonify({
-                "message": "Invalid data",
-                "successful": False,
-                "status_code": 400
-                }), 400
+            return jsonify({"message": "Invalid data","successful": False,"status_code": 400}), 400
 
         status = data.get("status")
         
         if status not in ["read", "unread"]:
-            return jsonify({
-                "message": "Invalid status value",
-                "successful": False,
-                "status_code": 400
-                }), 400
+            return jsonify({ "message": "Invalid status value","successful": False,"status_code": 400}), 400
 
         notification.status = status
 
@@ -1886,19 +1188,11 @@ def update_or_delete_notification(notification_id):
             user_id = get_jwt_identity()
             log_activity(f'Updated notification status: {notification_id}', user_id)
 
-            return jsonify({
-                "message": "Notification status updated successfully",
-                "successful": True,
-                "status_code": 201
-                }), 201
+            return jsonify({ "message": "Notification status updated successfully", "successful": True, "status_code": 201}), 201
 
         except Exception as err:
             db.session.rollback()
-            return jsonify({
-                "message": str(err),
-                "successful": False,
-                "status_code": 500
-                }), 500
+            return jsonify({ "message": str(err), "successful": False, "status_code": 500}), 500
 
     elif request.method == "DELETE":
         try:
@@ -1908,166 +1202,30 @@ def update_or_delete_notification(notification_id):
             user_id = get_jwt_identity()
             log_activity(f'Deleted notification: {notification_id}', user_id)
 
-            return jsonify({
-                "message": "Notification deleted successfully",
-                "successful": False,
-                "status_code": 204
-                }), 204
+            return jsonify({ "message": "Notification deleted successfully", "successful": False, "status_code": 204}), 204
 
         except Exception as err:
             db.session.rollback()
-            return jsonify({
-                "message": str(err),
-                "successful": False,
-                "status_code": 500
-                }), 500
+            return jsonify({"message": str(err), "successful": False, "status_code": 500}), 500
 
-
-@app.route("/users/get-reviews", methods=["GET"])
-@jwt_required()
-def get_reviews():
-
-    reviews = Review.query.all()
-
-    if not reviews:
-        return jsonify({
-            "message": "There are no reviews",
-            "status_code": 404,
-            "successful": False
-        }), 404
-
-    reviews_data = []
-
-    for review in reviews:
-        reviews_data.append({
-            "id": review.id,
-            "rating": review.rating,
-            "comment": review.comment,
-            "activity": review.activity
-        })
-
-    return jsonify({
-        "message": reviews_data,
-        "successful": True,
-        "status_code": 200
-    }), 200
-
-
-@app.route("/users/create-reviews", methods=["POST"])
-@jwt_required()
-def create_reviews():
-    
-    data = request.get_json()
-
-    if not data:
-
-        return jsonify({
-            "message": "Invalid data",
-            "status_code": 400,
-            "successful": False
-        }), 400
-    
-    staff_no = data.get("staff_no")
-    activity = data.get("activity")
-    comment = data.get("commet")
-    timestamp = data.get("timestamp")
-    rating = data.get("rating")
-    manager_id = data.get("manager_id")
-
-    if not staff_no or not activity or not comment or not timestamp or not rating or not manager_id:
-        return jsonify({
-            "message": "Missing required fields",
-            "status_code": 400,
-            "successful": False
-        }), 400
-    
-    if not isinstance(staff_no, int) or not isinstance(rating, int) or not isinstance(manager_id, str):
-        return jsonify({
-            "message": "Staff number, manager ID, and rating must be a numbers",
-            "status_code": 400,
-            "successful": False
-        }), 400
-    
-    if not all(isinstance(value, str) for value in [activity, comment, timestamp]):
-        return jsonify({
-            "message": "Comment, and activity must be letters",
-            "status_code": 400,
-            "successful": False
-        }), 400
-    
-    if len(activity) > 200:
-        return jsonify({
-            "message": "Activity must be less than 201 characters long",
-            "status_code": 400,
-            "successful": False
-        }), 400
-    
-    merchandiser = User.query.filter(staff_no == staff_no).first()
-
-    if not merchandiser:
-        return jsonify({
-            "message": "Invalid merchandiser",
-            "status_code": 400,
-            "successful": False
-        }),400
-    
-    merchandiser_id = merchandiser.id
-
-    new_review = Review(
-        manager_id = manager_id,
-        merchandiser_id = merchandiser_id,
-        activity = activity,
-        comment = comment,
-        rating = rating,
-        timestamp = timestamp
-    )
-
-    try:
-        db.session.add(new_review)
-        db.session.commit()
-        return jsonify({
-            "message": "Review added successfully",
-            "status_code": 201,
-            "successful": True
-        }),201
-    
-    except Exception as err:
-        db.session.rollback()
-        return jsonify({
-            "message": f"Error {err}",
-            "status_code": 500,
-            "successful": False
-        }), 500
     
 @app.route("/users/<int:user_id>/update", methods=["PUT"])
 def update_user(user_id):
     data = request.get_json()
 
     if not data:
-        return jsonify({
-            "message": "Invalid request",
-            "successful": False,
-            "status_code": 400
-        }), 400
+        return jsonify({ "message": "Invalid request", "successful": False, "status_code": 400}), 400
 
     # Extract fields from the request
     new_password = data.get("new_password")
 
     if not new_password:
-        return jsonify({
-            "message": "New password is required",
-            "successful": False,
-            "status_code": 400
-        }), 400
+        return jsonify({ "message": "New password is required", "successful": False, "status_code": 400}), 400
 
     # Check if the user exists
     user = User.query.get(user_id)
     if not user:
-        return jsonify({
-            "message": "User not found",
-            "successful": False,
-            "status_code": 404
-        }), 404
+        return jsonify({ "message": "User not found", "successful": False, "status_code": 404}), 404
 
     # Update the password
     hashed_new_password = bcrypt.generate_password_hash(new_password).decode('utf-8')
@@ -2075,18 +1233,10 @@ def update_user(user_id):
 
     try:
         db.session.commit()
-        return jsonify({
-            "message": "Password updated successfully",
-            "successful": True,
-            "status_code": 200
-        }), 200
+        return jsonify({"message": "Password updated successfully", "successful": True, "status_code": 200}), 200
     except Exception as err:
         db.session.rollback()
-        return jsonify({
-            "message": f"Failed to update password. Error: {err}",
-            "successful": False,
-            "status_code": 500
-        }), 500
+        return jsonify({"message": f"Failed to update password. Error: {err}", "successful": False, "status_code": 500}), 500
 
 @app.route("/users/get-facilities/<int:manager_id>", methods=[ "GET"])
 @jwt_required()
@@ -2094,11 +1244,7 @@ def get_facilities(manager_id):
     facilities = Facility.query.filter_by(manager_id=manager_id).all()
 
     if not facilities:
-        return jsonify({
-            "message": "There are no facilities",
-            "status_code": 404,
-            "successful": False
-        }), 404
+        return jsonify({"message": "There are no facilities", "status_code": 404, "successful": False}), 404
 
     facilities_data = []
 
@@ -2109,12 +1255,7 @@ def get_facilities(manager_id):
             "location": facility.location,
             "type": facility.type
         })
-
-        return jsonify({
-            "message": facilities_data,
-            "successful": True,
-            "status_code": 200
-        }), 200
+        return jsonify({"message": facilities_data, "successful": True, "status_code": 200 }), 200
     
 
 @app.route("/users/create/facility", methods=["POST"])
@@ -2123,11 +1264,7 @@ def create_facility():
     data = request.get_json()
 
     if not data:
-        return jsonify({
-            "message": "There are no facilities",
-            "status_code": 400,
-            "successful": False
-        }), 400
+        return jsonify({ "message": "There are no facilities", "status_code": 400, "successful": False}), 400
     
     name = data.get("name")
     location = data.get("location")
@@ -2135,41 +1272,20 @@ def create_facility():
     manager_id = data.get("manager_id")
 
     if not name or not location or not type_ or not manager_id:
-        return jsonify({
-            "message": "Missing required fields",
-            "status_code": 400,
-            "successful": False
-        }), 400
+        return jsonify({"message": "Missing required fields", "status_code": 400, "successful": False}), 400
     
     if not all(isinstance(item, str) for item in [name, location, type_]):
-        return jsonify({
-            "message": "Fields 'name', 'location', and 'type' must be strings",
-            "status_code": 400,
-            "successful": False
-        }), 400
+        return jsonify({ "message": "Fields 'name', 'location', and 'type' must be strings", "status_code": 400, "successful": False}), 400
     
-    new_facility = Facility(
-        name=name,
-        location=location,
-        type=type_,
-        manager_id=manager_id
-    )
+    new_facility = Facility(name=name, location=location, type=type_, manager_id=manager_id)
 
     try:
         db.session.add(new_facility)
         db.session.commit()
-        return jsonify({
-            "message": "Facility created successfully",
-            "status_code": 201,
-            "successful": True
-        }), 201
+        return jsonify({"message": "Facility created successfully", "status_code": 201, "successful": True}), 201
     except Exception as err:
         db.session.rollback()
-        return jsonify({
-            "message": f"Failed to create facility: Error:  {err}",
-            "status_code": 500,
-            "successful": False
-        }), 500
+        return jsonify({ "message": f"Failed to create facility: Error:  {err}", "status_code": 500, "successful": False}), 500
 
 
 @app.route("/users/get-responses/<int:manager_id>", methods=["GET"])
@@ -2181,11 +1297,7 @@ def get_responses(manager_id):
         .options(joinedload(Response.merchandiser)).all()
 
     if not responses:
-        return jsonify({
-            "message": "There are no responses yet.",
-            "status_code": 404,
-            "successful": False
-        }), 404
+        return jsonify({"message": "There are no responses yet.", "status_code": 404, "successful": False}), 404
     
     responses_list = []
 
@@ -2196,14 +1308,9 @@ def get_responses(manager_id):
             "manager_id": response.manager_id,
             "response": response.response,
             "date_time": response.date_time,
-            "status": response.status
-        })
+            "status": response.status})
 
-    return jsonify({
-            "message": responses_list,
-            "status_code": 200,
-            "successful": True
-        }), 200
+    return jsonify({"message": responses_list, "status_code": 200, "successful": True}), 200
     
 
 @app.route("/users/approve/response", methods=["PUT"])
@@ -2212,11 +1319,7 @@ def approve_response():
     data = request.get_json()
 
     if not data:
-        return jsonify({
-            "message": "Invalid data: You did not provide any data.",
-            "status_code": 400,
-            "successful": False
-        }), 400
+        return jsonify({ "message": "Invalid data: You did not provide any data.", "status_code": 400, "successful": False}), 400
     
     response_id = data.get("response_id")
 
@@ -2224,52 +1327,24 @@ def approve_response():
     key_performance_indicators = KeyPerformaceIndicator.query.filter_by(id=response_to_rate.kpi_id).first()
 
     if not key_performance_indicators:
-        return jsonify({
-            "message": "Rating parameters have not been provided.",
-            "status_code": 404,
-            "successful": False
-        }), 404
+        return jsonify({ "message": "Rating parameters have not been provided.", "status_code": 404, "successful": False}), 404
     
+    if not response_to_rate: 
+        return jsonify({ "message": "Response does not exist.", "status_code": 400, "successful": False}), 400
 
     
-    response = {
-        "id": response_to_rate.id,
-        "merchandiser_id": response_to_rate.merchandiser_id,
-        "manager_id": response_to_rate.manager_id,
-        "response": response_to_rate.response,
-        "date_time": response_to_rate.date_time,
-        "status": response_to_rate.status,
-        "kpi_id": response_to_rate.kpi_id
-    }
-
-    if response_to_rate:
-        compute_merch_scores(response)
-        
-        
-    else:
-        return jsonify({
-            "message": "Response does not exist.",
-            "status_code": 404,
-            "successful": False
-        }), 404
-
+    response = {"id": response_to_rate.id, "merchandiser_id": response_to_rate.merchandiser_id, "manager_id": response_to_rate.manager_id, "response": response_to_rate.response, "date_time": response_to_rate.date_time, "status": response_to_rate.status, "kpi_id": response_to_rate.kpi_id}
+    
     response_to_rate.status = "Approved"
 
     try:
         db.session.commit()
-        return jsonify({
-            "message": "Response approved successfully.",
-            "status_code": 201,
-            "successful": True
-        }), 201
+        compute_merch_scores(response)
+        return jsonify({ "message": "Response approved successfully.", "status_code": 201, "successful": True}), 201
 
     except Exception as err:
         db.session.rollback()
-        return jsonify({
-            "message": f"Failed to approve the response: Error: {err}",
-            "status_code": 500,
-            "successful": False
-        }), 500
+        return jsonify({"message": f"Failed to approve the response: Error: {err}", "status_code": 500, "successful": False}), 500
 
 
 @app.route("/users/post/response", methods=["POST"])
@@ -2278,11 +1353,7 @@ def create_response():
     data = request.get_json()
 
     if not data:
-        return jsonify({
-            "message": "Invalid data: You did not provide any data.",
-            "status_code": 400,
-            "successful": False
-        }), 400
+        return jsonify({"message": "Invalid data: You did not provide any data.", "status_code": 400, "successful": False}), 400
     
     merchandiser_id = data.get("merchandiser_id")
     manager_id = data.get("manager_id")
@@ -2291,56 +1362,29 @@ def create_response():
     status = data.get("status").lower() if data.get("status") else None
 
     if not all([merchandiser_id, manager_id, response, date_time, status]):
-        return jsonify({
-            "message": "Missing required fields.",
-            "status_code": 400,
-            "successful": False
-        }), 400
+        return jsonify({ "message": "Missing required fields.", "status_code": 400, "successful": False}), 400
     
     try:
         response = json.loads(response)
         date_time = datetime.strptime(date_time, "%Y-%m-%d %H:%M:%S")
 
     except Exception:
-        return jsonify({
-            "message": "Provide response body as JSON type and time in the format '%Y-%m-%d %H:%M:%S'",
-            "status_code": 400,
-            "successful": False
-        }), 400
+        return jsonify({ "message": "Provide response body as JSON type and time in the format '%Y-%m-%d %H:%M:%S'", "status_code": 400, "successful": False}), 400
     
     if status == "pending":
-        return jsonify({
-            "message": "Status must be pending",
-            "status_code": 400,
-            "successful": False
-        }), 400
+        return jsonify({"message": "Status must be pending","status_code": 400,"successful": False}), 400
     
-    new_response = Response(
-        merchandiser_id=merchandiser_id,
-        manager_id=manager_id,
-        response=response,
-        date_time=date_time,
-        status=status
-    )
+    new_response = Response( merchandiser_id=merchandiser_id, manager_id=manager_id, response=response, date_time=date_time, status=status)
 
     try:
         db.session.add(new_response)
         db.session.commit()
-        return jsonify({
-            "message": "Response sent successfully.",
-            "status_code": 201,
-            "successful": True
-        }), 201
+        return jsonify({"message": "Response sent successfully.","status_code": 201,"successful": True}), 201
 
     except Exception as err:
         db.session.rollback()
-        return jsonify({
-            "message": f"Failed to send response: Error: {err}",
-            "status_code": 500,
-            "successful": False
-        }), 500
+        return jsonify({"message": f"Failed to send response: Error: {err}","status_code": 500,"successful": False}), 500
     
-
 
 @app.route("/users/assign/merchandiser", methods=["POST"])
 @jwt_required()
@@ -2348,11 +1392,7 @@ def assign_merchandiser():
     data = request.get_json()
 
     if not data:
-        return jsonify({
-            "message": "Invalid data: You did not provide any data.",
-            "status_code": 400,
-            "successful": False
-        }), 400
+        return jsonify({"message": "Invalid data: You did not provide any data.","status_code": 400,"successful": False}), 400
     
     manager_id = data.get("manager_id")
     merchandiser_id = data.get("merchandiser_id")
@@ -2360,18 +1400,10 @@ def assign_merchandiser():
     year= data.get("year")
 
     if not all({manager_id, merchandiser_id, month}):
-        return jsonify({
-            "message": "Missing required fields.",
-            "status_code": 400,
-            "successful": False
-        }), 400
+        return jsonify({"message": "Missing required fields.","status_code": 400,"successful": False}), 400
     
     if month not in calendar.month_name[1:]:
-        return jsonify({
-            "message": "Invalid month. Please provide a valid month name (e.g., January to December).",
-            "status_code": 400,
-            "successful": False
-        }), 400
+        return jsonify({"message": "Invalid month. Please provide a valid month name (e.g., January to December).","status_code": 400,"successful": False}), 400
     
     new_merchandiser = AssignedMerchandiser(
         manager_id=manager_id,
@@ -2383,20 +1415,12 @@ def assign_merchandiser():
     try:
         db.session.add(new_merchandiser)
         db.session.commit()
-        return jsonify({
-            "message": "Merchandiser assigned successfully.",
-            "status_code": 201,
-            "successful": True
-        }), 201
+        return jsonify({"message": "Merchandiser assigned successfully.","status_code": 201,"successful": True}), 201
         
 
     except Exception as err:
         db.session.rollback()
-        return jsonify({
-            "message": f"Failed to assign merchandiser: Error: {err}",
-            "status_code": 500,
-            "successful": False
-        }), 500
+        return jsonify({"message": f"Failed to assign merchandiser: Error: {err}","status_code": 500,"successful": False}), 500
     
 
 @app.route("/users/get/merchandisers/<int:manager_id>", methods=["GET"])
@@ -2408,11 +1432,7 @@ def get_manager_merchandisers(manager_id):
     assigned_merchandisers = AssignedMerchandiser.query.filter_by(manager_id=manager_id, month=current_month, year=current_year).all()
 
     if not assigned_merchandisers:
-        return jsonify({
-            "message": f"You have not been assigned any merchandiser for the period {current_month}, {current_year}",
-            "status_code": 400,
-            "successful": False
-        }), 400
+        return jsonify({"message": f"You have not been assigned any merchandiser for the period {current_month}, {current_year}","status_code": 400,"successful": False}), 400
     
     assigned_merchandisers_list = []
 
@@ -2428,11 +1448,7 @@ def get_manager_merchandisers(manager_id):
                 "year": merchandiser.year,
             })
 
-    return jsonify({
-        "message": assigned_merchandisers_list,
-        "status_code": 200,
-        "successful": True
-    }), 200
+    return jsonify({"message": assigned_merchandisers_list,"status_code": 200,"successful": True}), 200
 
 
 def merchandiser_performance(merchandiser_id, new_scores):
@@ -2466,14 +1482,13 @@ def merchandiser_performance(merchandiser_id, new_scores):
     for metric, new_score in new_scores.items():
         # Update the value of the metric by taking the current value, adding the new value,
         # performing an average, and replacing the value with the result
-        current_value = current_performance.get(metric, 0)
-        updated_value = (current_value + new_score) / 2
+        if metric in current_performance:
+            current_value = current_performance[metric]
+            updated_value = (current_value + new_score) / 2
+        else:
+            updated_value = new_score
+        
         current_performance[metric] = updated_value
-    
-    # Calculate the total performance separately if it's provided in new_scores
-    if 'total_performance' in new_scores:
-        current_performance['total_performance'] = new_scores['total_performance']
-    
     
     # Update the performance entry with the modified performance metrics
     performance_entry.performance = current_performance
@@ -2485,9 +1500,11 @@ def merchandiser_performance(merchandiser_id, new_scores):
 def is_grammatically_correct(text):
     return len(re.findall(r'\b(?:\w+\b\s+){10,}', text)) > 0  
 
+
 def compute_merch_scores(response):
     merchandiser_id = response['merchandiser_id']
     kpi_id = response['kpi_id']
+    response_datetime = datetime.strptime(response['date_time'], '%Y-%m-%dT%H:%M:%S')  # Assuming ISO format for date_time
     
     # Fetch the relevant KPI
     kpi = KeyPerformaceIndicator.query.filter_by(id=kpi_id).first()
@@ -2507,43 +1524,24 @@ def compute_merch_scores(response):
 
         if text_required:
             text = metric_response.get('text', "")
-            if len(text) > 200:
-                text_score = 1
-            elif len(text) > 50 and 'image' in metric_response:
+            if len(text) >= 500:
                 text_score = 1
             elif len(text) > 100:
                 text_score = 0.5
-            elif 'image' in metric_response:
-                text_score = 0.5
 
-        if image_required and 'image' in metric_response:
-            image_score = 0.5
+        if image_required and 'image' in metric_response and len(text) < 500:
+            image_score = 0.5 
 
-        # Ensure the sum of text_score and image_score does not exceed 1
         total_score = min(text_score + image_score, 1)
-        performance_dict[metric] = total_score
+        performance_dict[metric] = total_score * 100  # Convert to percentage
 
     # Calculate the total response length score
     total_response_length = len(response['response'].get('text', ""))
-    if total_response_length > 500:
-        performance_dict['total_length'] = 1
-    else:
-        performance_dict['total_length'] = 0
+    performance_dict['detailed'] = 100 if total_response_length > 500 else 0
 
     # Calculate the clarity score
     text_response = response['response'].get('text', "")
-    if is_grammatically_correct(text_response):
-        performance_dict['clarity'] = 1
-    else:
-        performance_dict['clarity'] = 0
-
-    # Sum the individual scores and calculate the percentage
-    total_possible_score = len(kpi_metrics) * 1 + 2  # +2 for total_length and clarity
-    total_score = sum(performance_dict.values())
-    performance_percentage = (total_score / total_possible_score) * 100
-
-    # Reduce by 60%
-    reduced_performance = performance_percentage * 0.6
+    performance_dict['clarity'] = 100 if is_grammatically_correct(text_response) else 0
 
     # Calculate the completeness score based on the route plan for the current month
     current_date = datetime.now()
@@ -2552,6 +1550,7 @@ def compute_merch_scores(response):
 
     route_plan = RoutePlan.query.filter_by(merchandiser_id=merchandiser_id).first()
     completeness_percentage = 0
+    timely_score = 0
 
     if route_plan:
         date_range = route_plan.date_range
@@ -2564,23 +1563,161 @@ def compute_merch_scores(response):
             for instruction in route_plan.instructions:
                 if instruction['status'] == 'complete':
                     completed_instructions += 1
-            
+                
+                instruction_start_date = datetime.strptime(instruction['date_range']['start_date'], '%Y-%m-%d')
+                if response_datetime.date() == instruction_start_date.date():
+                    timely_score = 100  # Convert to percentage
+
             completeness_percentage = (completed_instructions / total_instructions) * 100 if total_instructions else 0
 
     # Reduce completeness by 40%
     reduced_completeness = completeness_percentage * 0.4
 
+    # Sum the individual scores and calculate the percentage
+    total_possible_score = (len(kpi_metrics) + 3) * 100  # +3 for detailed and clarity, and timely
+    total_score = sum(performance_dict.values()) + timely_score
+    performance_percentage = (total_score / total_possible_score) * 100
+
+    # Reduce by 60%
+    reduced_performance = performance_percentage * 0.6
+
     # Calculate the total performance
     total_performance = reduced_performance + reduced_completeness
+
     performance_dict['completeness'] = completeness_percentage
     performance_dict['total_performance'] = total_performance
+    performance_dict['timely'] = timely_score
 
     return merchandiser_performance(merchandiser_id, performance_dict)
 
 
+@app.route("/users/get/day/performance/<int:merch_id>", methods=["GET"])
+@jwt_required()
+def get_day_performance(merch_id):
+    # Get the current date
+    current_datetime = datetime.now()
+    start_of_day = current_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_of_day = current_datetime.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    # Query the performance for the given merchandiser and current day
+    performance_entry = MerchandiserPerformance.query.filter_by(merchandiser_id=merch_id)\
+                                                     .filter(MerchandiserPerformance.date_time >= start_of_day)\
+                                                     .filter(MerchandiserPerformance.date_time <= end_of_day)\
+                                                     .first()
+
+    if performance_entry:
+        performance_data = {
+            "merchandiser_id": performance_entry.merchandiser_id,
+            "k_p_i_id": performance_entry.k_p_i_id,
+            "date_time": performance_entry.date_time.strftime('%Y-%m-%dT%H:%M:%S'),
+            "day": performance_entry.day,
+            "performance": performance_entry.performance
+        }
+        return jsonify({"successful": True, "message": performance_data, "status_code": 200}), 200
+    else:
+        return jsonify({"successful": False, "message": "No performance data found for the given day", "status_code": 404}), 404
 
 
+@app.route("/users/get/week/performance/<int:merch_id>", methods=["GET"])
+@jwt_required()
+def get_week_performance(merch_id):
+    # Calculate the start of the week (Sunday at midnight)
+    current_datetime = datetime.now()
+    start_of_week = current_datetime - timedelta(days=current_datetime.weekday() + 1)
+    start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
 
+    # Query the performance data from the start of the week to now
+    performance_entries = MerchandiserPerformance.query.filter_by(merchandiser_id=merch_id)\
+                                                       .filter(MerchandiserPerformance.date_time >= start_of_week)\
+                                                       .all()
+
+    if not performance_entries:
+        return jsonify({"successful": False, "message": "No performance data found for the given week", "status_code": 404}), 404
+
+    # Initialize a dictionary to accumulate performance data
+    aggregated_performance = {}
+    total_days = len(performance_entries)
+
+    for entry in performance_entries:
+        for metric, value in entry.performance.items():
+            if metric not in aggregated_performance:
+                aggregated_performance[metric] = 0
+            aggregated_performance[metric] += value
+
+    # Calculate the average for each performance metric
+    averaged_performance = {metric: (total / total_days) for metric, total in aggregated_performance.items()}
+
+
+    return jsonify({"successful": True, "message": averaged_performance, "status_code": 200}), 200
+
+@app.route("/users/get/month/performance/<int:merch_id>", methods=["GET"])
+@jwt_required()
+def get_month_performance(merch_id):
+    # Calculate the start of the month (date 1)
+    current_datetime = datetime.now()
+    start_of_month = current_datetime.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    # Query the performance data from the start of the month to now
+    performance_entries = MerchandiserPerformance.query.filter_by(merchandiser_id=merch_id)\
+                                                       .filter(MerchandiserPerformance.date_time >= start_of_month)\
+                                                       .all()
+
+    if not performance_entries:
+        return jsonify({"successful": False, "message": "No performance data found for the given month", "status_code": 404}), 404
+
+    # Initialize a dictionary to accumulate performance data
+    aggregated_performance = {}
+    total_days = len(performance_entries)
+
+    for entry in performance_entries:
+        for metric, value in entry.performance.items():
+            if metric not in aggregated_performance:
+                aggregated_performance[metric] = 0
+            aggregated_performance[metric] += value
+
+    # Calculate the average for each performance metric
+    averaged_performance = {metric: (total / total_days) for metric, total in aggregated_performance.items()}
+
+    return jsonify({"successful": True, "message": averaged_performance, "status_code": 404}), 200
+
+@app.route("/users/get/year/performance/<int:merch_id>", methods=["GET"])
+@jwt_required()
+def get_yearly_performance(merch_id):
+    # Get the current date
+    current_date = datetime.now()
+    # Initialize the dictionary to store monthly performance
+    yearly_performance = {}
+
+    # Loop through each month of the past year
+    for month_offset in range(1, 13):  # From 1 to 12 for each month
+        # Calculate the start and end dates for the current month
+        start_of_month = current_date.replace(day=1, month=current_date.month - month_offset)
+        end_of_month = start_of_month.replace(day=1, month=start_of_month.month + 1) - timedelta(days=1)
+
+        # Query performance entries within the current month range
+        performance_entries = MerchandiserPerformance.query.filter_by(merchandiser_id=merch_id)\
+                                                           .filter(MerchandiserPerformance.date_time >= start_of_month)\
+                                                           .filter(MerchandiserPerformance.date_time <= end_of_month)\
+                                                           .all()
+
+        # Calculate the average total_performance for the current month
+        total_performance_sum = sum(entry.performance['total_performance'] for entry in performance_entries)
+        total_performance_avg = total_performance_sum / len(performance_entries) if performance_entries else 0
+
+        # Format the month and year for the dictionary key
+        month_key = start_of_month.strftime("%B, %Y")
+
+        # Add the monthly performance to the yearly dictionary
+        yearly_performance[month_key] = {'total_performance': total_performance_avg}
+    
+    if yearly_performance:
+        return jsonify({"successful": True, "message": yearly_performance, "status_code": 200}), 200
+    
+    else:
+        return jsonify({"successful": False, "message": "No performance for this year", "status_code": 404}), 404
+
+
+  
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5555, debug=True)
 
