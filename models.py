@@ -86,8 +86,7 @@ class KeyPerformaceIndicator(db.Model):
     facility_id = db.Column(db.Integer, ForeignKey("facilities.id"), nullable=False)
     performance_metric = db.Column(JSON, nullable=False)
 
-    facility = db.relationship("User", backref=db.backref('key_performance_indicators', lazy=True))
-
+    facility = db.relationship("Facility", backref=db.backref('key_performance_indicators', lazy=True))
 
 class Response(db.Model):
     __tablename__ = "responses"
@@ -101,9 +100,8 @@ class Response(db.Model):
     kpi_id = db.Column(db.Integer, ForeignKey("key_performance_indicators.id"), nullable=False)
 
     key_pi_ais = db.relationship("KeyPerformaceIndicator", backref=db.backref('responses', lazy=True))
-    merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('responses', lazy=True))
-    manager = db.relationship('User', foreign_keys=[manager_id], backref=db.backref('responses', lazy=True))
-
+    merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('merchandiser_responses', lazy=True))
+    manager = db.relationship('User', foreign_keys=[manager_id], backref=db.backref('manager_responses', lazy=True))
 
 
 
@@ -146,7 +144,7 @@ class AssignedMerchandiser(db.Model):
     year = db.Column(db.Integer, nullable=False)
      
 
-    merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('assigned_merchandisers', lazy=True))
-    manager = db.relationship('User', foreign_keys=[manager_id], backref=db.backref('assigned_merchandisers', lazy=True))
+    merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('merchandiser_assigned_merchandisers', lazy=True))
+    manager = db.relationship('User', foreign_keys=[manager_id], backref=db.backref('manager_assigned_merchandisers', lazy=True))
 
 
