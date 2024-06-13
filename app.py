@@ -12,6 +12,7 @@ from sqlalchemy import func, and_
 import smtplib
 from email.mime.text import MIMEText
 from sqlalchemy.orm.exc import NoResultFound
+from sqlalchemy.exc import IntegrityError
 import json
 import os
 import re
@@ -1723,6 +1724,72 @@ def get_yearly_performance(merch_id):
         return jsonify({"successful": False, "message": "No performance for this year", "status_code": 404}), 404
 
 
+@app.route("/users/create/kpi", methods=["POST"])
+@jwt_required()
+def create_key_performance_indicators():
+    if not request.is_json:
+        return jsonify({"message": "Invalid data: You did not provide any data.", "status_code": 400, "successful": False}), 400
+
+    data = request.get_json()
+
+    # Validate the provided data
+    sector_name = data.get("sector_name")
+    company_name = data.get("company_name")
+    admin_id = data.get("admin_id")
+    performance_metric = data.get("performance_metric")
+
+    if not sector_name or not isinstance(sector_name, str):
+        return jsonify({"message": "Invalid data: 'sector_name' is required and must be a string.", "status_code": 400, "successful": False}), 400
+
+    if not company_name or not isinstance(company_name, str):
+        return jsonify({"message": "Invalid data: 'company_name' is required and must be a string.", "status_code": 400, "successful": False}), 400
+
+    if admin_id is None or not isinstance(admin_id, int):
+        return jsonify({"message": "Invalid data: 'admin_id' is required and must be an integer.", "status_code": 400, "successful": False}), 400
+
+    if not performance_metric or not isinstance(performance_metric, dict):
+        return jsonify({"message": "Invalid data: 'performance_metric' is required and must be a JSON object.", "status_code": 400, "successful": False}), 400
+
+    try:
+        kpi = KeyPerformaceIndicator(
+            sector_name=sector_name,
+            company_name=company_name,
+            admin_id=admin_id,
+            performance_metric=performance_metric
+        )
+        db.session.add(kpi)
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"message": "Database error: Could not create KPI. Check if the admin_id exists.", "status_code": 400, "successful": False}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": f"An error occurred: {str(e)}", "status_code": 500, "successful": False}), 500
+
+    return jsonify({"message": "KPI created successfully.", "status_code": 201, "successful": True}), 201
+
+
+@app.route("/users/get/kpis", methods=["GET"])
+@jwt_required()
+def get_key_performance_indicators():
+    try:
+        kpis = KeyPerformaceIndicator.query.all()
+        kpi_list = []
+        
+        for kpi in kpis:
+            kpi_data = {
+                "id": kpi.id,
+                "sector_name": kpi.sector_name,
+                "company_name": kpi.company_name,
+                "admin_id": kpi.admin_id,
+                "performance_metric": kpi.performance_metric
+            }
+            kpi_list.append(kpi_data)
+        
+        return jsonify({"message": kpi_list, "status_code": 200, "successful": True}), 200
+    
+    except Exception as e:
+        return jsonify({"message": f"An error occurred: {str(e)}", "status_code": 500, "successful": False}), 500
   
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5555, debug=True)
