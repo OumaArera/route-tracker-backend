@@ -1410,6 +1410,7 @@ def assign_merchandiser():
 
     try:
         date_time = datetime.strptime(date_time_str, "%Y-%m-%d %H:%M:%S")
+        date_time = datetime.strptime(date_time_str, "%Y-%m-%d %H:%M:%S")
     except ValueError:
         return jsonify({"message": "Invalid date format. Please provide a valid datetime in the format 'YYYY-MM-DD HH:MM:SS'.", "status_code": 400, "successful": False}), 400
 
