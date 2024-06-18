@@ -3,6 +3,7 @@ from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy import ForeignKey
 from datetime import datetime, timezone
 from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.dialects.postgresql import JSONB
 
 db = SQLAlchemy()
 
@@ -141,7 +142,7 @@ class AssignedMerchandiser(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     manager_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
-    merchandisers_id = db.Column(JSON, nullable=False)
+    merchandisers_id = db.Column(JSONB, nullable=False)
     date_time = db.Column(db.DateTime, nullable=False)
      
     manager = db.relationship('User', backref=db.backref('assigned_merchandisers', lazy=True))

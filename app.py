@@ -1410,14 +1410,13 @@ def assign_merchandiser():
 
     try:
         date_time = datetime.strptime(date_time_str, "%Y-%m-%d %H:%M:%S")
-        date_time = datetime.strptime(date_time_str, "%Y-%m-%d %H:%M:%S")
     except ValueError:
         return jsonify({"message": "Invalid date format. Please provide a valid datetime in the format 'YYYY-MM-DD HH:MM:SS'.", "status_code": 400, "successful": False}), 400
 
     # Iterate through each merchandiser ID and check if already assigned
     for merchandiser_id in merchandiser_ids:
         existing_assignment = AssignedMerchandiser.query.filter(
-            AssignedMerchandiser.merchandiser_id == merchandiser_id,
+            AssignedMerchandiser.merchandisers_id.contains([merchandiser_id]),
             extract('year', AssignedMerchandiser.date_time) == date_time.year,
             extract('month', AssignedMerchandiser.date_time) == date_time.month
         ).first()
@@ -1432,7 +1431,7 @@ def assign_merchandiser():
     # Add new assignments
     new_assignments = AssignedMerchandiser(
             manager_id=manager_id,
-            merchandiser_id=merchandiser_ids_json,
+            merchandisers_id=merchandiser_ids_json,
             date_time=date_time
         )
     
@@ -1443,7 +1442,6 @@ def assign_merchandiser():
     except Exception as err:
         db.session.rollback()
         return jsonify({"message": f"Failed to assign merchandisers: Error: {err}", "status_code": 500, "successful": False}), 500
-
 
 @app.route("/users/get/merchandisers/<int:manager_id>", methods=["GET"])
 @jwt_required()
