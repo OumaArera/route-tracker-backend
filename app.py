@@ -1427,10 +1427,11 @@ def assign_merchandiser():
             if merchandiser:
                 return jsonify({"message": f"The merchandiser {merchandiser.first_name} {merchandiser.last_name} is already assigned to another manager for the specified month.", "status_code": 400, "successful": False}), 400
 
+    merchandiser_ids_json = json.dumps(merchandiser_ids)
     # Add new assignments
     new_assignments = AssignedMerchandiser(
             manager_id=manager_id,
-            merchandiser_id=merchandiser_ids,
+            merchandiser_id=merchandiser_ids_json,
             date_time=date_time
         )
     
