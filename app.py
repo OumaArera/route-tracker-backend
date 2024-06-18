@@ -18,6 +18,7 @@ import os
 import re
 from sqlalchemy.orm import joinedload
 import calendar
+from sqlalchemy import extract
 
 
 from models import User,  RoutePlan, Location, Notification, ActivityLog, Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance
@@ -1392,43 +1393,49 @@ def create_response():
         db.session.rollback()
         return jsonify({"message": f"Failed to send response: Error: {err}","status_code": 500,"successful": False}), 500
     
-
 @app.route("/users/assign/merchandiser", methods=["POST"])
 @jwt_required()
 def assign_merchandiser():
     data = request.get_json()
 
     if not data:
-        return jsonify({"message": "Invalid data: You did not provide any data.","status_code": 400,"successful": False}), 400
+        return jsonify({"message": "Invalid data: You did not provide any data.", "status_code": 400, "successful": False}), 400
     
     manager_id = data.get("manager_id")
     merchandiser_id = data.get("merchandiser_id")
-    month = data.get("month_year").title() if data.get("month") else None
-    year= data.get("year")
+    date_time_str = data.get("date_time")
 
-    if not all({manager_id, merchandiser_id, month}):
-        return jsonify({"message": "Missing required fields.","status_code": 400,"successful": False}), 400
-    
-    if month not in calendar.month_name[1:]:
-        return jsonify({"message": "Invalid month. Please provide a valid month name (e.g., January to December).","status_code": 400,"successful": False}), 400
-    
+    if not all([manager_id, merchandiser_id, date_time_str]):
+        return jsonify({"message": "Missing required fields.", "status_code": 400, "successful": False}), 400
+
+    try:
+        date_time = datetime.strptime(date_time_str, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return jsonify({"message": "Invalid date format. Please provide a valid datetime in the format 'YYYY-MM-DD HH:MM:SS'.", "status_code": 400, "successful": False}), 400
+
+    # Check if the merchandiser is already assigned to another manager in the same month
+    existing_assignment = AssignedMerchandiser.query.filter(
+        AssignedMerchandiser.merchandiser_id == merchandiser_id,
+        extract('year', AssignedMerchandiser.date_time) == date_time.year,
+        extract('month', AssignedMerchandiser.date_time) == date_time.month
+    ).first()
+
+    if existing_assignment:
+        return jsonify({"message": "This merchandiser is already assigned to another manager for the specified month.", "status_code": 400, "successful": False}), 400
+
     new_merchandiser = AssignedMerchandiser(
         manager_id=manager_id,
         merchandiser_id=merchandiser_id,
-        month=month,
-        year=year
+        date_time=date_time
     )
 
     try:
         db.session.add(new_merchandiser)
         db.session.commit()
-        return jsonify({"message": "Merchandiser assigned successfully.","status_code": 201,"successful": True}), 201
-        
-
+        return jsonify({"message": "Merchandiser assigned successfully.", "status_code": 201, "successful": True}), 201
     except Exception as err:
         db.session.rollback()
-        return jsonify({"message": f"Failed to assign merchandiser: Error: {err}","status_code": 500,"successful": False}), 500
-    
+        return jsonify({"message": f"Failed to assign merchandiser: Error: {err}", "status_code": 500, "successful": False}), 500
 
 @app.route("/users/get/merchandisers/<int:manager_id>", methods=["GET"])
 @jwt_required()
@@ -1774,6 +1781,9 @@ def create_key_performance_indicators():
 def get_key_performance_indicators():
     try:
         kpis = KeyPerformaceIndicator.query.all()
+
+        if not kpis:
+            return jsonify({"message": "No KPIs created", "status_code": 404, "successful": False}), 404
         kpi_list = []
         
         for kpi in kpis:
