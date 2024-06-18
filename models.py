@@ -78,32 +78,17 @@ class ActivityLog(db.Model):
     user = db.relationship('User', backref=db.backref('activity_logs', lazy=True))
 
 
-class Review(db.Model):
-
-    __tablename__ = "reviews"
-
-    id = db.Column(db.Integer, primary_key=True)
-    manager_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
-    merchandiser_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
-    activity = db.Column(db.String(200), nullable=False)
-    comment = db.Column(db.Text, nullable=False)
-    rating = db.Column(db.Integer, nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
-
-    merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('reviews', lazy=True))
-    manager = db.relationship('User', foreign_keys=[manager_id], backref=db.backref('rated_reviews', lazy=True))
-
-
 class KeyPerformaceIndicator(db.Model):
 
     __tablename__ = "key_performance_indicators"
 
     id = db.Column(db.Integer, primary_key=True)
-    facility_id = db.Column(db.Integer, ForeignKey("facilities.id"), nullable=False)
+    sector_name = db.Column(db.String(100), nullable=False)
+    company_name = db.Column(db.String(100), nullable=False)
+    admin_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
     performance_metric = db.Column(JSON, nullable=False)
 
     facility = db.relationship("User", backref=db.backref('key_performance_indicators', lazy=True))
-
 
 class Response(db.Model):
     __tablename__ = "responses"
@@ -117,9 +102,8 @@ class Response(db.Model):
     kpi_id = db.Column(db.Integer, ForeignKey("key_performance_indicators.id"), nullable=False)
 
     key_pi_ais = db.relationship("KeyPerformaceIndicator", backref=db.backref('responses', lazy=True))
-    merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('responses', lazy=True))
-    manager = db.relationship('User', foreign_keys=[manager_id], backref=db.backref('responses', lazy=True))
-
+    merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('merchandiser_responses', lazy=True))
+    manager = db.relationship('User', foreign_keys=[manager_id], backref=db.backref('manager_responses', lazy=True))
 
 
 
@@ -145,7 +129,7 @@ class MerchandiserPerformance(db.Model):
     k_p_i_id = db.Column(db.Integer, ForeignKey("key_performance_indicators.id"), nullable=False)
     date_time = db.Column(db.DateTime, nullable=False)
     day = db.Column(db.String(50), nullable=False)
-    performance = db.Column(JSON, nullable=False)
+    performance = db.Column(JSON, nullable=False) #parse
 
     merchandiser = db.relationship('User', backref=db.backref('merchandiser_performances', lazy=True))
     kpi = db.relationship('KeyPerformaceIndicator', backref=db.backref('merchandiser_performances', lazy=True))
@@ -162,7 +146,7 @@ class AssignedMerchandiser(db.Model):
     year = db.Column(db.Integer, nullable=False)
      
 
-    merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('assigned_merchandisers', lazy=True))
-    manager = db.relationship('User', foreign_keys=[manager_id], backref=db.backref('assigned_merchandisers', lazy=True))
+    merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('merchandiser_assigned_merchandisers', lazy=True))
+    manager = db.relationship('User', foreign_keys=[manager_id], backref=db.backref('manager_assigned_merchandisers', lazy=True))
 
 
