@@ -142,8 +142,8 @@ class AssignedMerchandiser(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     manager_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
     merchandiser_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
-    month = db.Column(db.String(50), nullable=False)
-    year = db.Column(db.Integer, nullable=False)
+    date_time = db.Column(db.DateTime, nullable=False)
+    
      
 
     merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('merchandiser_assigned_merchandisers', lazy=True))
