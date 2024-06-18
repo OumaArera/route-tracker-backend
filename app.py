@@ -1263,8 +1263,24 @@ def get_facilities(manager_id):
             "location": facility.location,
             "type": facility.type
         })
-        return jsonify({"message": facilities_data, "successful": True, "status_code": 200 }), 200
-    
+    return jsonify({"message": facilities_data, "successful": True, "status_code": 200 }), 200
+
+@app.route("/users/get/facilities", methods=["GET"])
+@jwt_required()
+def get_all_facilities():
+    facilities = Facility.query.all()
+
+    facilities_list =[]
+    for facility in facilities:
+        facilities_list.append({
+            "id": facility.id,
+            "name": facility.name,
+            "location": facility.location,
+            "type": facility.type,
+            "manager_id": facility.manager_id
+        })
+
+    return jsonify({ "message": facilities_list, "status_code": 200, "successful": True}), 200 
 
 @app.route("/users/create/facility", methods=["POST"])
 @jwt_required()
@@ -1475,6 +1491,7 @@ def get_manager_merchandisers(manager_id):
                     assigned_merchandisers_list.append({
                         "assignment_id": assignment.id,
                         "merchandiser_id": merchandiser_data.id,
+                        "staff_no": merchandiser_data.staff_no,
                         "merchandiser_name": f"{merchandiser_data.first_name} {merchandiser_data.last_name}",
                         "manager_id": assignment.manager_id,
                         "month": datetime.now().strftime('%B'),  
@@ -1824,6 +1841,23 @@ def get_key_performance_indicators():
     except Exception as e:
         return jsonify({"message": f"An error occurred: {str(e)}", "status_code": 500, "successful": False}), 500
   
+
+@app.route("/users/delete/kpi/<int:id>", methods=["DELETE"])
+@jwt_required()
+def delete_kpi(id):
+    kpi = KeyPerformaceIndicator.query.get(id)
+    
+    if kpi:
+        try:
+            db.session.delete(kpi)
+            db.session.commit()
+            return jsonify({"status_code": 200, "message": "KPI deleted successfully"}), 200
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"status_code": 500, "message": f"An error occurred: {str(e)}"}), 500
+    else:
+        return jsonify({"status_code": 404, "message": "KPI not found"}), 404
+
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5555, debug=True)
 
