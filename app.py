@@ -1402,10 +1402,10 @@ def assign_merchandiser():
         return jsonify({"message": "Invalid data: You did not provide any data.", "status_code": 400, "successful": False}), 400
     
     manager_id = data.get("manager_id")
-    merchandiser_id = data.get("merchandiser_id")
+    merchandiser_ids = data.get("merchandiser_id")
     date_time_str = data.get("date_time")
 
-    if not all([manager_id, merchandiser_id, date_time_str]):
+    if not all([manager_id, merchandiser_ids, date_time_str]):
         return jsonify({"message": "Missing required fields.", "status_code": 400, "successful": False}), 400
 
     try:
@@ -1413,29 +1413,38 @@ def assign_merchandiser():
     except ValueError:
         return jsonify({"message": "Invalid date format. Please provide a valid datetime in the format 'YYYY-MM-DD HH:MM:SS'.", "status_code": 400, "successful": False}), 400
 
-    # Check if the merchandiser is already assigned to another manager in the same month
-    existing_assignment = AssignedMerchandiser.query.filter(
-        AssignedMerchandiser.merchandiser_id == merchandiser_id,
-        extract('year', AssignedMerchandiser.date_time) == date_time.year,
-        extract('month', AssignedMerchandiser.date_time) == date_time.month
-    ).first()
+    # Iterate through each merchandiser ID and check if already assigned
+    for merchandiser_id in merchandiser_ids:
+        existing_assignment = AssignedMerchandiser.query.filter(
+            AssignedMerchandiser.merchandiser_id == merchandiser_id,
+            extract('year', AssignedMerchandiser.date_time) == date_time.year,
+            extract('month', AssignedMerchandiser.date_time) == date_time.month
+        ).first()
 
-    if existing_assignment:
-        return jsonify({"message": "This merchandiser is already assigned to another manager for the specified month.", "status_code": 400, "successful": False}), 400
+        if existing_assignment:
+            # Fetch first and last name of the assigned merchandiser
+            merchandiser = User.query.filter_by(id=merchandiser_id).first()
+            if merchandiser:
+                return jsonify({"message": f"The merchandiser {merchandiser.first_name} {merchandiser.last_name} is already assigned to another manager for the specified month.", "status_code": 400, "successful": False}), 400
 
-    new_merchandiser = AssignedMerchandiser(
-        manager_id=manager_id,
-        merchandiser_id=merchandiser_id,
-        date_time=date_time
-    )
+    # Add new assignments
+    new_assignments = []
+    for merchandiser_id in merchandiser_ids:
+        new_merchandiser = AssignedMerchandiser(
+            manager_id=manager_id,
+            merchandiser_id=merchandiser_id,
+            date_time=date_time
+        )
+        new_assignments.append(new_merchandiser)
 
     try:
-        db.session.add(new_merchandiser)
+        db.session.add_all(new_assignments)
         db.session.commit()
-        return jsonify({"message": "Merchandiser assigned successfully.", "status_code": 201, "successful": True}), 201
+        return jsonify({"message": "Merchandisers assigned successfully.", "status_code": 201, "successful": True}), 201
     except Exception as err:
         db.session.rollback()
-        return jsonify({"message": f"Failed to assign merchandiser: Error: {err}", "status_code": 500, "successful": False}), 500
+        return jsonify({"message": f"Failed to assign merchandisers: Error: {err}", "status_code": 500, "successful": False}), 500
+
 
 @app.route("/users/get/merchandisers/<int:manager_id>", methods=["GET"])
 @jwt_required()
