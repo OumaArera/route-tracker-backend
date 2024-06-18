@@ -1428,17 +1428,14 @@ def assign_merchandiser():
                 return jsonify({"message": f"The merchandiser {merchandiser.first_name} {merchandiser.last_name} is already assigned to another manager for the specified month.", "status_code": 400, "successful": False}), 400
 
     # Add new assignments
-    new_assignments = []
-    for merchandiser_id in merchandiser_ids:
-        new_merchandiser = AssignedMerchandiser(
+    new_assignments = AssignedMerchandiser(
             manager_id=manager_id,
-            merchandiser_id=merchandiser_id,
+            merchandiser_id=merchandiser_ids,
             date_time=date_time
         )
-        new_assignments.append(new_merchandiser)
-
+    
     try:
-        db.session.add_all(new_assignments)
+        db.session.add(new_assignments)
         db.session.commit()
         return jsonify({"message": "Merchandisers assigned successfully.", "status_code": 201, "successful": True}), 201
     except Exception as err:
