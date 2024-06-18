@@ -1413,27 +1413,30 @@ def assign_merchandiser():
     except ValueError:
         return jsonify({"message": "Invalid date format. Please provide a valid datetime in the format 'YYYY-MM-DD HH:MM:SS'.", "status_code": 400, "successful": False}), 400
 
-    # Iterate through each merchandiser ID and check if already assigned
-    for merchandiser_id in merchandiser_ids:
-        existing_assignment = AssignedMerchandiser.query.filter(
-            AssignedMerchandiser.merchandisers_id.contains([merchandiser_id]),
-            extract('year', AssignedMerchandiser.date_time) == date_time.year,
-            extract('month', AssignedMerchandiser.date_time) == date_time.month
-        ).first()
+    # Check for existing assignments for the given month and year
+    existing_assignments = AssignedMerchandiser.query.filter(
+        extract('year', AssignedMerchandiser.date_time) == date_time.year,
+        extract('month', AssignedMerchandiser.date_time) == date_time.month
+    ).all()
 
-        if existing_assignment:
-            # Fetch first and last name of the assigned merchandiser
-            merchandiser = User.query.filter_by(id=merchandiser_id).first()
-            if merchandiser:
-                return jsonify({"message": f"The merchandiser {merchandiser.first_name} {merchandiser.last_name} is already assigned to another manager for the specified month.", "status_code": 400, "successful": False}), 400
+    # Iterate through existing assignments and check for conflicts
+    for assignment in existing_assignments:
+        for merchandiser_id in merchandiser_ids:
+            if str(merchandiser_id) in assignment.merchandisers_id:
+                merchandiser = User.query.filter_by(id=merchandiser_id).first()
+                if merchandiser:
+                    return jsonify({
+                        "message": f"The merchandiser {merchandiser.first_name} {merchandiser.last_name} is already assigned to another manager for the specified month.",
+                        "status_code": 400,
+                        "successful": False
+                    }), 400
 
-    merchandiser_ids_json = json.dumps(merchandiser_ids)
     # Add new assignments
     new_assignments = AssignedMerchandiser(
-            manager_id=manager_id,
-            merchandisers_id=merchandiser_ids_json,
-            date_time=date_time
-        )
+        manager_id=manager_id,
+        merchandisers_id=json.dumps(merchandiser_ids),
+        date_time=date_time
+    )
     
     try:
         db.session.add(new_assignments)
@@ -1447,28 +1450,42 @@ def assign_merchandiser():
 @jwt_required()
 def get_manager_merchandisers(manager_id):
     current_year = datetime.now().year
-    current_month = datetime.now().strftime("%B").capitalize()  
+    current_month = datetime.now().month  # Get the numeric month
 
-    assigned_merchandisers = AssignedMerchandiser.query.filter_by(manager_id=manager_id, month=current_month, year=current_year).all()
+    assigned_merchandisers = AssignedMerchandiser.query.filter(
+        AssignedMerchandiser.manager_id == manager_id,
+        extract('month', AssignedMerchandiser.date_time) == current_month,
+        extract('year', AssignedMerchandiser.date_time) == current_year
+    ).all()
 
     if not assigned_merchandisers:
-        return jsonify({"message": f"You have not been assigned any merchandiser for the period {current_month}, {current_year}","status_code": 400,"successful": False}), 400
+        return jsonify({"message": f"No merchandisers assigned for you for the month of {datetime.now().strftime('%B')} {current_year}.", "status_code": 404, "successful": False}), 404
     
     assigned_merchandisers_list = []
 
-    for merchandiser in assigned_merchandisers:
-        merchandiser_data = User.query.filter_by(id=merchandiser.merchandiser_id).first()
+    for assignment in assigned_merchandisers:
+        merchandisers_ids = json.loads(assignment.merchandisers_id)
 
-        if merchandiser_data:
-            assigned_merchandisers_list.append({
-                "id": merchandiser.id,
-                "merchandiser_name": f"{merchandiser_data.first_name} {merchandiser_data.last_name}",
-                "manager_id": merchandiser.manager_id,
-                "month": merchandiser.month,
-                "year": merchandiser.year,
-            })
+        for merchandiser_id in merchandisers_ids:
+            try:
+                merchandiser_id_int = int(merchandiser_id)
+                merchandiser_data = User.query.filter_by(id=merchandiser_id_int).first()
 
-    return jsonify({"message": assigned_merchandisers_list,"status_code": 200,"successful": True}), 200
+                if merchandiser_data:
+                    assigned_merchandisers_list.append({
+                        "assignment_id": assignment.id,
+                        "merchandiser_id": merchandiser_data.id,
+                        "merchandiser_name": f"{merchandiser_data.first_name} {merchandiser_data.last_name}",
+                        "manager_id": assignment.manager_id,
+                        "month": datetime.now().strftime('%B'),  
+                        "year": current_year,
+                    })
+            except ValueError:
+                # Handle cases where merchandiser_id cannot be converted to int (e.g., invalid format)
+                pass
+
+    return jsonify({"message": assigned_merchandisers_list, "status_code": 200, "successful": True}), 200
+
 
 
 def merchandiser_performance(merchandiser_id, new_scores):
