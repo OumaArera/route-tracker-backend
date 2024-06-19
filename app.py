@@ -1427,27 +1427,42 @@ def create_facility():
 @app.route("/users/get-responses/<int:manager_id>", methods=["GET"])
 @jwt_required()
 def get_responses(manager_id):
-    # responses = Response.query.filter_by(manager_id=manager_id, status="pending").all()
-    responses = db.session.query(Response).join(User, Response.merchandiser_id == User.id) \
-        .filter(Response.manager_id == manager_id, Response.status == "pending") \
-        .options(joinedload(Response.merchandiser)).all()
+    try:
+        responses = db.session.query(Response).join(User, Response.merchandiser_id == User.id) \
+            .filter(Response.manager_id == manager_id, Response.status == "pending") \
+            .options(joinedload(Response.merchandiser)).all()
 
-    if not responses:
-        return jsonify({"message": "There are no responses yet.", "status_code": 404, "successful": False}), 404
-    
-    responses_list = []
+        if not responses:
+            return jsonify({"message": "There are no responses yet.", "status_code": 404, "successful": False}), 404
 
-    for response in responses:
-        responses_list.append({
-            "id": response.id,
-            "merchandiser": f"{response.merchandiser.first_name} {response.merchandiser.last_name}",
-            "manager_id": response.manager_id,
-            "response": response.response,
-            "date_time": response.date_time,
-            "status": response.status})
+        responses_list = []
 
-    return jsonify({"message": responses_list, "status_code": 200, "successful": True}), 200
-    
+        for response in responses:
+            formatted_response = {
+                "id": response.id,
+                "merchandiser": f"{response.merchandiser.first_name} {response.merchandiser.last_name}",
+                "manager_id": response.manager_id,
+                "date_time": response.date_time.strftime("%a, %d %b %Y %H:%M:%S GMT"),
+                "status": response.status,
+                "response": {}
+            }
+
+            # Process response data including images
+            for key, value in response.response.items():
+                formatted_response["response"][key] = {
+                    "text": value.get("text", ""),
+                    "image": value.get("image", "")
+                }
+                if value.get("image"):
+                    formatted_response["response"][key]["image"] = f"{request.url_root}images/{value['image']}"
+
+            responses_list.append(formatted_response)
+
+        return jsonify({"message": responses_list, "status_code": 200, "successful": True}), 200
+
+    except Exception as e:
+        return jsonify({"message": f"Failed to retrieve responses: {str(e)}", "status_code": 500, "successful": False}), 500
+
 
 @app.route("/users/approve/response", methods=["PUT"])
 @jwt_required()
@@ -1482,6 +1497,7 @@ def approve_response():
         db.session.rollback()
         return jsonify({"message": f"Failed to approve the response: Error: {err}", "status_code": 500, "successful": False}), 500
 
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -1513,20 +1529,17 @@ def create_response():
                 _, field, type_ = key.split('[')[1], key.split('[')[2].split(']')[0], key.split(']')[1][1:]
                 if field not in responses:
                     responses[field] = {}
-                responses[field][type_] = request.form[key]
+                if type_ == 'image':
+                    # Handle image file upload
+                    file = request.files[key]
+                    if file and allowed_file(file.filename):
+                        filename = secure_filename(file.filename)
+                        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                        responses[field][type_] = filename
+                else:
+                    # Handle text data
+                    responses[field][type_] = request.form[key]
 
-        for key in request.files.keys():
-            if key.startswith('response['):
-                _, field, type_ = key.split('[')[1], key.split('[')[2].split(']')[0], key.split(']')[1][1:]
-                if field not in responses:
-                    responses[field] = {}
-                file = request.files[key]
-                if file and allowed_file(file.filename):
-                    filename = secure_filename(file.filename)
-                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                    responses[field][type_] = filename
-
-    
         new_response = Response(
             merchandiser_id=merchandiser_id,
             manager_id=manager_id,
@@ -1538,11 +1551,10 @@ def create_response():
         db.session.commit()
 
         # For demonstration, returning a success response
-        return jsonify({"message": "Response sent successfully.", "status_code": 201, "successful": True}), 201
+        return jsonify({"message": "Response stored successfully.", "status_code": 201, "successful": True}), 201
 
     except Exception as e:
-        return jsonify({"message": f"Failed to send response: {str(e)}", "status_code": 500, "successful": False}), 500
-
+        return jsonify({"message": f"Failed to store response: {str(e)}", "status_code": 500, "successful": False}), 500
 
 @app.route("/users/assign/merchandiser", methods=["POST"])
 @jwt_required()
@@ -1637,7 +1649,6 @@ def get_manager_merchandisers(manager_id):
                 pass
 
     return jsonify({"message": assigned_merchandisers_list, "status_code": 200, "successful": True}), 200
-
 
 
 def merchandiser_performance(merchandiser_id, new_scores):
