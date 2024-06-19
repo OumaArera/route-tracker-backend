@@ -114,6 +114,19 @@ print("Hello, World!")
     # Till December
 }
 
+{
+    "instruction 1": {
+        "text": "text response",
+        "image": "image"
+    },
+    "instruction 2": {
+        "text": "text response",
+        "image": None
+    }
+
+    # And more and more
+}
+
 
 
 {
