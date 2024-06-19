@@ -653,6 +653,52 @@ def modify_route(id):
         return jsonify({'message': f'Error committing to database: {err}',"successful": False, "status_code": 500 }), 500
 
 
+@app.route("/users/merchandisers/routes/<int:id>", methods=["GET"])
+@jwt_required()
+def get_merchandiser_routes(id):
+    # Fetch all route plans for the given merchandiser
+    routes = RoutePlan.query.filter_by(merchandiser_id=id).all()
+
+    if not routes:
+        return jsonify({'message': 'No route plans found', "successful": False, "status_code": 404}), 404
+
+    # Current month date range
+    current_date = datetime.now(timezone.utc)
+    first_day_of_month = current_date.replace(day=1)
+    last_day_of_month = (first_day_of_month + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+
+    filtered_routes = []
+    
+    for route in routes:
+        start_date_dt = datetime.fromisoformat(route.date_range['start_date']).replace(tzinfo=timezone.utc)
+        end_date_dt = datetime.fromisoformat(route.date_range['end_date']).replace(tzinfo=timezone.utc)
+        
+        if not (first_day_of_month <= start_date_dt <= last_day_of_month) or not (first_day_of_month <= end_date_dt <= last_day_of_month):
+            continue
+        
+        manager = User.query.get(route.manager_id)
+        manager_name = f"{manager.first_name} {manager.last_name}"
+        
+        instructions = json.loads(route.instructions)
+        for instruction in instructions:
+            facility_id = instruction.get('facility')
+            facility = Facility.query.get(facility_id)
+            if facility:
+                instruction['facility_name'] = facility.name
+
+        filtered_routes.append({
+            'id': route.id,
+            'merchandiser_id': route.merchandiser_id,
+            'manager_id': route.manager_id,
+            'manager_name': manager_name,
+            'date_range': route.date_range,
+            'instructions': instructions,
+            'status': route.status
+        })
+
+    return jsonify({"successful": True, "status_code": 200, 'message': filtered_routes}), 200
+
+
 @app.route('/users/route-plans', methods=['GET', 'POST'])
 @jwt_required()
 def route_plan_details():
@@ -764,7 +810,6 @@ def route_plan_details():
         except Exception as err:
             db.session.rollback()
             return jsonify({'message': f"Internal server error. Error: {err}", "successful": False, "status_code": 500}), 500
-
 
 
 @app.route("/users/change-route-status/<int:id>", methods=["PUT"])
@@ -1910,6 +1955,32 @@ def delete_kpi(id):
             return jsonify({"status_code": 500, "message": f"An error occurred: {str(e)}"}), 500
     else:
         return jsonify({"status_code": 404, "message": "KPI not found"}), 404
+
+
+@app.route("/users/change/pass", methods=["PUT"])
+@jwt_required()
+def change_pass():
+    data = request.get_json()
+    email = data.get("email")
+    new_password = data.get("new_password")
+
+    if not email or not new_password:
+        return jsonify({"message": "Email and new password are required", "successful": False, "status_code": 400}), 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"message": "User not found", "successful": False, "status_code": 404}), 404
+
+    hashed_password = bcrypt.generate_password_hash(new_password).decode("utf-8")
+    user.password = hashed_password
+
+    try:
+        db.session.commit()
+        return jsonify({"message": "Password changed successfully", "successful": True, "status_code": 200}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": f"Internal server error: {e}", "successful": False, "status_code": 500}), 500
+
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5555, debug=True)
