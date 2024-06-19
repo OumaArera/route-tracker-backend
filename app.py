@@ -18,6 +18,7 @@ import os
 import re
 from sqlalchemy.orm import joinedload
 import calendar
+from sqlalchemy import extract
 
 
 from models import User,  RoutePlan, Location, Notification, ActivityLog, Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance
@@ -561,28 +562,39 @@ def send_email_to_merchandiser(data):
 @app.route("/users/manager-routes/<int:id>", methods=["GET"])
 @jwt_required()
 def get_manager_routes(id):
+    current_date = datetime.now()
+    start_of_month = current_date.replace(day=1)
+    start_of_next_month = (start_of_month.replace(month=start_of_month.month % 12 + 1) if start_of_month.month != 12 else start_of_month.replace(year=start_of_month.year + 1, month=1))
 
     routes = RoutePlan.query.filter_by(manager_id=id).all()
 
-    if not routes:
-        return jsonify({'message': 'You have no route plans found',"successful": False,"status_code": 404}), 404
-    
     routes_list = []
-
     for route in routes:
-        merchandiser = User.query.filter_by(id=route.merchandiser_id).first()
-        
-        if merchandiser:
-            merchandiser_name = f"{merchandiser.first_name} {merchandiser.last_name}"
-            staff_no = merchandiser.staff_no
+        start_date = datetime.strptime(route.date_range['start_date'], '%Y-%m-%d')
 
-        else:
-            merchandiser_name = None
-            staff_no = None
-        
-        routes_list.append({ "id": route.id, "instructions": route.instructions, "manager_id": route.manager_id, "date_range": route.date_range, "merchandiser_name": merchandiser_name, "staff_no": staff_no, "status": route.status})
+        if start_of_month <= start_date < start_of_next_month:
+            merchandiser = User.query.filter_by(id=route.merchandiser_id).first()
+            if merchandiser:
+                merchandiser_name = f"{merchandiser.first_name} {merchandiser.last_name}"
+                staff_no = merchandiser.staff_no
+            else:
+                merchandiser_name = None
+                staff_no = None
 
-    return jsonify({"successful": True,"status_code": 200,"message": routes_list}), 200
+            routes_list.append({
+                "id": route.id,
+                "instructions": route.instructions,
+                "manager_id": route.manager_id,
+                "date_range": route.date_range,
+                "merchandiser_name": merchandiser_name,
+                "staff_no": staff_no,
+                "status": route.status
+            })
+
+    if not routes_list:
+        return jsonify({'message': 'You have no route plans found for this month', "successful": False, "status_code": 404}), 404
+
+    return jsonify({"successful": True, "status_code": 200, "message": routes_list}), 200
 
 
 @app.route("/users/delete-route-plans/<int:id>", methods=["DELETE"])
@@ -640,10 +652,56 @@ def modify_route(id):
         db.session.rollback()
         return jsonify({'message': f'Error committing to database: {err}',"successful": False, "status_code": 500 }), 500
 
+
+@app.route("/users/merchandisers/routes/<int:id>", methods=["GET"])
+@jwt_required()
+def get_merchandiser_routes(id):
+    # Fetch all route plans for the given merchandiser
+    routes = RoutePlan.query.filter_by(merchandiser_id=id).all()
+
+    if not routes:
+        return jsonify({'message': 'No route plans found', "successful": False, "status_code": 404}), 404
+
+    # Current month date range
+    current_date = datetime.now(timezone.utc)
+    first_day_of_month = current_date.replace(day=1)
+    last_day_of_month = (first_day_of_month + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+
+    filtered_routes = []
+    
+    for route in routes:
+        start_date_dt = datetime.fromisoformat(route.date_range['start_date']).replace(tzinfo=timezone.utc)
+        end_date_dt = datetime.fromisoformat(route.date_range['end_date']).replace(tzinfo=timezone.utc)
+        
+        if not (first_day_of_month <= start_date_dt <= last_day_of_month) or not (first_day_of_month <= end_date_dt <= last_day_of_month):
+            continue
+        
+        manager = User.query.get(route.manager_id)
+        manager_name = f"{manager.first_name} {manager.last_name}"
+        
+        instructions = json.loads(route.instructions)
+        for instruction in instructions:
+            facility_id = instruction.get('facility')
+            facility = Facility.query.get(facility_id)
+            if facility:
+                instruction['facility_name'] = facility.name
+
+        filtered_routes.append({
+            'id': route.id,
+            'merchandiser_id': route.merchandiser_id,
+            'manager_id': route.manager_id,
+            'manager_name': manager_name,
+            'date_range': route.date_range,
+            'instructions': instructions,
+            'status': route.status
+        })
+
+    return jsonify({"successful": True, "status_code": 200, 'message': filtered_routes}), 200
+
+
 @app.route('/users/route-plans', methods=['GET', 'POST'])
 @jwt_required()
 def route_plan_details():
-
     if request.method == 'GET':
         route_plans = RoutePlan.query.all()
         if not route_plans:
@@ -651,18 +709,25 @@ def route_plan_details():
 
         route_plan_list = []
         for route_plan in route_plans:
-            route_plan_info = {'id': route_plan.id, 'merchandiser_id': route_plan.merchandiser_id,'manager_id': route_plan.manager_id, 'date_range': route_plan.date_range, 'instructions': route_plan.instructions, 'status': route_plan.status}
+            route_plan_info = {
+                'id': route_plan.id,
+                'merchandiser_id': route_plan.merchandiser_id,
+                'manager_id': route_plan.manager_id,
+                'date_range': route_plan.date_range,
+                'instructions': route_plan.instructions,
+                'status': route_plan.status
+            }
             route_plan_list.append(route_plan_info)
 
         user_id = get_jwt_identity()
         log_activity('Viewed merchandiser routes', user_id)
 
-        return jsonify({ "successful": True,"status_code": 200,'message': route_plan_list }), 200
+        return jsonify({"successful": True, "status_code": 200, 'message': route_plan_list}), 200
 
     elif request.method == 'POST':
         data = request.get_json()
         if not data:
-            return jsonify({"message": "Invalid request","successful": False,"status_code": 400}), 400
+            return jsonify({"message": "Invalid request", "successful": False, "status_code": 400}), 400
 
         manager_id = data.get('manager_id')
         date_range = data.get('date_range')
@@ -674,32 +739,65 @@ def route_plan_details():
 
         # Check for required fields
         if not all([staff_no, manager_id, date_range, status]):
-            return jsonify({'message': 'Missing required fields',"successful": False, "status_code": 400}), 400
-        
+            return jsonify({'message': 'Missing required fields', "successful": False, "status_code": 400}), 400
+
         try:
             staff_no = int(staff_no)
             manager_id = int(manager_id)
         except ValueError:
-            return jsonify({'message': 'Staff number and Manager ID must be integers',"successful": False, "status_code": 400}), 400
-        
+            return jsonify({'message': 'Staff number and Manager ID must be integers', "successful": False, "status_code": 400}), 400
+
         if not isinstance(date_range, dict):
-            return jsonify({'message': 'Date range must be a dictionary',"successful": False,"status_code": 400}), 400
+            return jsonify({'message': 'Date range must be a dictionary', "successful": False, "status_code": 400}), 400
 
         start_date = date_range.get('start_date')
         end_date = date_range.get('end_date')
 
         if not all([start_date, end_date]):
-            return jsonify({'message': 'Missing start_date or end_date in date_range', "successful": False,"status_code": 400}), 400
+            return jsonify({'message': 'Missing start_date or end_date in date_range', "successful": False, "status_code": 400}), 400
 
         if status not in ['complete', 'pending']:
-            return jsonify({'message': 'Status must be either "complete" or "pending"',"successful": False,"status_code": 400}), 400
-        
-        user = User.query.filter_by(staff_no=staff_no, role='merchandiser').first()
+            return jsonify({'message': 'Status must be either "complete" or "pending"', "successful": False, "status_code": 400}), 400
 
+        user = User.query.filter_by(staff_no=staff_no, role='merchandiser').first()
         if not user:
             return jsonify({'message': 'Invalid staff number or user is not a merchandiser', "successful": False, "status_code": 400}), 400
 
-        new_route_plan = RoutePlan(merchandiser_id=user.id,manager_id=manager_id, date_range=date_range,instructions=instructions_json,status=status)
+        # Check if the date_range falls within the current month
+        current_date = datetime.now(timezone.utc).date()
+        first_day_of_month = current_date.replace(day=1)
+        last_day_of_month = (first_day_of_month + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+
+        start_date_dt = datetime.fromisoformat(start_date).date()
+        end_date_dt = datetime.fromisoformat(end_date).date()
+        print(f"First day of the month: {first_day_of_month}. Start date: {start_date_dt}. Last day of the month: {last_day_of_month}")
+        print(f"First day of the month: {first_day_of_month}. End date: {end_date_dt}. Last day of the month: {last_day_of_month}")
+        if not (first_day_of_month <= start_date_dt <= last_day_of_month) or not (first_day_of_month <= end_date_dt <= last_day_of_month):
+            return jsonify({'message': 'Assignments can only be made for the current month', "successful": False, "status_code": 400}), 400
+
+        existing_plans = RoutePlan.query.filter_by(merchandiser_id=user.id).all()
+        for plan in existing_plans:
+            plan_start_date = datetime.fromisoformat(plan.date_range['start_date']).date()
+            plan_end_date = datetime.fromisoformat(plan.date_range['end_date']).date()
+            if (plan_start_date.month == current_date.month and plan_end_date.month == current_date.month):
+                plan_instructions = json.loads(plan.instructions)
+                for new_instruction in instructions:
+                    new_instruction_start = datetime.fromisoformat(new_instruction['start']).replace(tzinfo=timezone.utc)
+                    new_instruction_end = datetime.fromisoformat(new_instruction['end']).replace(tzinfo=timezone.utc)
+                    for existing_instruction in plan_instructions:
+                        existing_instruction_start = datetime.fromisoformat(existing_instruction['start']).replace(tzinfo=timezone.utc)
+                        existing_instruction_end = datetime.fromisoformat(existing_instruction['end']).replace(tzinfo=timezone.utc)
+                        if (new_instruction_start.date() == existing_instruction_start.date() and
+                            (new_instruction_start <= existing_instruction_end and new_instruction_end >= existing_instruction_start)):
+                            return jsonify({'message': f'{user.first_name} {user.last_name} already has another assignment on {new_instruction_start.date()}', "successful": False, "status_code": 400}), 400
+
+        new_route_plan = RoutePlan(
+            merchandiser_id=user.id,
+            manager_id=manager_id,
+            date_range=date_range,
+            instructions=instructions_json,
+            status=status
+        )
 
         try:
             db.session.add(new_route_plan)
@@ -708,10 +806,11 @@ def route_plan_details():
             user_id = get_jwt_identity()
             log_activity('Created merchandiser routes', user_id)
             return jsonify({'message': 'Route plan created successfully', "successful": True, "status_code": 201}), 201
-        
+
         except Exception as err:
             db.session.rollback()
-            return jsonify({'message': f"Internal server error. Error: {err}","successful": False,"status_code": 500}), 500
+            return jsonify({'message': f"Internal server error. Error: {err}", "successful": False, "status_code": 500}), 500
+
 
 @app.route("/users/change-route-status/<int:id>", methods=["PUT"])
 @jwt_required()
@@ -1262,8 +1361,24 @@ def get_facilities(manager_id):
             "location": facility.location,
             "type": facility.type
         })
-        return jsonify({"message": facilities_data, "successful": True, "status_code": 200 }), 200
-    
+    return jsonify({"message": facilities_data, "successful": True, "status_code": 200 }), 200
+
+@app.route("/users/get/facilities", methods=["GET"])
+@jwt_required()
+def get_all_facilities():
+    facilities = Facility.query.all()
+
+    facilities_list =[]
+    for facility in facilities:
+        facilities_list.append({
+            "id": facility.id,
+            "name": facility.name,
+            "location": facility.location,
+            "type": facility.type,
+            "manager_id": facility.manager_id
+        })
+
+    return jsonify({ "message": facilities_list, "status_code": 200, "successful": True}), 200 
 
 @app.route("/users/create/facility", methods=["POST"])
 @jwt_required()
@@ -1392,70 +1507,100 @@ def create_response():
         db.session.rollback()
         return jsonify({"message": f"Failed to send response: Error: {err}","status_code": 500,"successful": False}), 500
     
-
 @app.route("/users/assign/merchandiser", methods=["POST"])
 @jwt_required()
 def assign_merchandiser():
     data = request.get_json()
 
     if not data:
-        return jsonify({"message": "Invalid data: You did not provide any data.","status_code": 400,"successful": False}), 400
+        return jsonify({"message": "Invalid data: You did not provide any data.", "status_code": 400, "successful": False}), 400
     
     manager_id = data.get("manager_id")
-    merchandiser_id = data.get("merchandiser_id")
-    month = data.get("month_year").title() if data.get("month") else None
-    year= data.get("year")
+    merchandiser_ids = data.get("merchandiser_id")
+    date_time_str = data.get("date_time")
 
-    if not all({manager_id, merchandiser_id, month}):
-        return jsonify({"message": "Missing required fields.","status_code": 400,"successful": False}), 400
-    
-    if month not in calendar.month_name[1:]:
-        return jsonify({"message": "Invalid month. Please provide a valid month name (e.g., January to December).","status_code": 400,"successful": False}), 400
-    
-    new_merchandiser = AssignedMerchandiser(
-        manager_id=manager_id,
-        merchandiser_id=merchandiser_id,
-        month=month,
-        year=year
-    )
+    if not all([manager_id, merchandiser_ids, date_time_str]):
+        return jsonify({"message": "Missing required fields.", "status_code": 400, "successful": False}), 400
 
     try:
-        db.session.add(new_merchandiser)
-        db.session.commit()
-        return jsonify({"message": "Merchandiser assigned successfully.","status_code": 201,"successful": True}), 201
-        
+        date_time = datetime.strptime(date_time_str, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return jsonify({"message": "Invalid date format. Please provide a valid datetime in the format 'YYYY-MM-DD HH:MM:SS'.", "status_code": 400, "successful": False}), 400
 
+    # Check for existing assignments for the given month and year
+    existing_assignments = AssignedMerchandiser.query.filter(
+        extract('year', AssignedMerchandiser.date_time) == date_time.year,
+        extract('month', AssignedMerchandiser.date_time) == date_time.month
+    ).all()
+
+    # Iterate through existing assignments and check for conflicts
+    for assignment in existing_assignments:
+        for merchandiser_id in merchandiser_ids:
+            if str(merchandiser_id) in assignment.merchandisers_id:
+                merchandiser = User.query.filter_by(id=merchandiser_id).first()
+                if merchandiser:
+                    return jsonify({
+                        "message": f"The merchandiser {merchandiser.first_name} {merchandiser.last_name} is already assigned to another manager for the specified month.",
+                        "status_code": 400,
+                        "successful": False
+                    }), 400
+
+    # Add new assignments
+    new_assignments = AssignedMerchandiser(
+        manager_id=manager_id,
+        merchandisers_id=json.dumps(merchandiser_ids),
+        date_time=date_time
+    )
+    
+    try:
+        db.session.add(new_assignments)
+        db.session.commit()
+        return jsonify({"message": "Merchandisers assigned successfully.", "status_code": 201, "successful": True}), 201
     except Exception as err:
         db.session.rollback()
-        return jsonify({"message": f"Failed to assign merchandiser: Error: {err}","status_code": 500,"successful": False}), 500
-    
+        return jsonify({"message": f"Failed to assign merchandisers: Error: {err}", "status_code": 500, "successful": False}), 500
 
 @app.route("/users/get/merchandisers/<int:manager_id>", methods=["GET"])
 @jwt_required()
 def get_manager_merchandisers(manager_id):
     current_year = datetime.now().year
-    current_month = datetime.now().strftime("%B").capitalize()  
+    current_month = datetime.now().month  # Get the numeric month
 
-    assigned_merchandisers = AssignedMerchandiser.query.filter_by(manager_id=manager_id, month=current_month, year=current_year).all()
+    assigned_merchandisers = AssignedMerchandiser.query.filter(
+        AssignedMerchandiser.manager_id == manager_id,
+        extract('month', AssignedMerchandiser.date_time) == current_month,
+        extract('year', AssignedMerchandiser.date_time) == current_year
+    ).all()
 
     if not assigned_merchandisers:
-        return jsonify({"message": f"You have not been assigned any merchandiser for the period {current_month}, {current_year}","status_code": 400,"successful": False}), 400
+        return jsonify({"message": f"No merchandisers assigned for you for the month of {datetime.now().strftime('%B')} {current_year}.", "status_code": 404, "successful": False}), 404
     
     assigned_merchandisers_list = []
 
-    for merchandiser in assigned_merchandisers:
-        merchandiser_data = User.query.filter_by(id=merchandiser.merchandiser_id).first()
+    for assignment in assigned_merchandisers:
+        merchandisers_ids = json.loads(assignment.merchandisers_id)
 
-        if merchandiser_data:
-            assigned_merchandisers_list.append({
-                "id": merchandiser.id,
-                "merchandiser_name": f"{merchandiser_data.first_name} {merchandiser_data.last_name}",
-                "manager_id": merchandiser.manager_id,
-                "month": merchandiser.month,
-                "year": merchandiser.year,
-            })
+        for merchandiser_id in merchandisers_ids:
+            try:
+                merchandiser_id_int = int(merchandiser_id)
+                merchandiser_data = User.query.filter_by(id=merchandiser_id_int).first()
 
-    return jsonify({"message": assigned_merchandisers_list,"status_code": 200,"successful": True}), 200
+                if merchandiser_data:
+                    assigned_merchandisers_list.append({
+                        "assignment_id": assignment.id,
+                        "merchandiser_id": merchandiser_data.id,
+                        "staff_no": merchandiser_data.staff_no,
+                        "merchandiser_name": f"{merchandiser_data.first_name} {merchandiser_data.last_name}",
+                        "manager_id": assignment.manager_id,
+                        "month": datetime.now().strftime('%B'),  
+                        "year": current_year,
+                    })
+            except ValueError:
+                # Handle cases where merchandiser_id cannot be converted to int (e.g., invalid format)
+                pass
+
+    return jsonify({"message": assigned_merchandisers_list, "status_code": 200, "successful": True}), 200
+
 
 
 def merchandiser_performance(merchandiser_id, new_scores):
@@ -1774,6 +1919,9 @@ def create_key_performance_indicators():
 def get_key_performance_indicators():
     try:
         kpis = KeyPerformaceIndicator.query.all()
+
+        if not kpis:
+            return jsonify({"message": "No KPIs created", "status_code": 404, "successful": False}), 404
         kpi_list = []
         
         for kpi in kpis:
@@ -1791,6 +1939,49 @@ def get_key_performance_indicators():
     except Exception as e:
         return jsonify({"message": f"An error occurred: {str(e)}", "status_code": 500, "successful": False}), 500
   
+
+@app.route("/users/delete/kpi/<int:id>", methods=["DELETE"])
+@jwt_required()
+def delete_kpi(id):
+    kpi = KeyPerformaceIndicator.query.get(id)
+    
+    if kpi:
+        try:
+            db.session.delete(kpi)
+            db.session.commit()
+            return jsonify({"status_code": 200, "message": "KPI deleted successfully"}), 200
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"status_code": 500, "message": f"An error occurred: {str(e)}"}), 500
+    else:
+        return jsonify({"status_code": 404, "message": "KPI not found"}), 404
+
+
+@app.route("/users/change/pass", methods=["PUT"])
+@jwt_required()
+def change_pass():
+    data = request.get_json()
+    email = data.get("email")
+    new_password = data.get("new_password")
+
+    if not email or not new_password:
+        return jsonify({"message": "Email and new password are required", "successful": False, "status_code": 400}), 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"message": "User not found", "successful": False, "status_code": 404}), 404
+
+    hashed_password = bcrypt.generate_password_hash(new_password).decode("utf-8")
+    user.password = hashed_password
+
+    try:
+        db.session.commit()
+        return jsonify({"message": "Password changed successfully", "successful": True, "status_code": 200}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": f"Internal server error: {e}", "successful": False, "status_code": 500}), 500
+
+
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5555, debug=True)
 
