@@ -1535,16 +1535,23 @@ def create_response():
                         "image": ""
                     }
 
+                if field_type == 'text':
+                    # Handle text data
+                    responses[category]['text'] = request.form[key]
+        
+        for key in request.files.keys():
+            if key.startswith('response['):
+                category = key.split('[')[1].split(']')[0]  # Extract category name
+                field_type = key.split('[')[2].split(']')[0]  # Extract 'text' or 'image'
+
                 if field_type == 'image':
                     # Handle image file upload
                     file = request.files[key]
                     if file and allowed_file(file.filename):
                         filename = secure_filename(file.filename)
-                        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                        responses[category]['image'] = filename
-                else:
-                    # Handle text data
-                    responses[category]['text'] = request.form[key]
+                        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                        file.save(file_path)
+                        responses[category]['image'] = file_path
 
         # Create new Response object
         new_response = Response(
@@ -1562,6 +1569,7 @@ def create_response():
 
     except Exception as e:
         return jsonify({"message": f"Failed to store response: {str(e)}", "status_code": 500, "successful": False}), 500
+
 
 
 @app.route("/users/assign/merchandiser", methods=["POST"])
