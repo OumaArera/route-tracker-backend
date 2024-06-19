@@ -127,6 +127,28 @@ print("Hello, World!")
     # And more and more
 }
 
+{
+    "date_time": "Wed, 19 Jun 2024 19:52:04 GMT",
+    "id": 3,
+    "manager_id": 11,
+    "merchandiser": "Judy Achieng",
+    "response": {
+        "Competitors Branding Strategies": {
+            "image": "2024-06-19_17-34.png",
+            "text": "Test"
+        },
+        "Shelf Space": {
+            "image": "2024-06-19_17-34.png",
+            "text": "Test"
+        },
+        "Price and Labeling":{
+            "image": "2024-06-19_17-34.png",
+            "text": "Test"
+        }
+    },
+    "status": "pending"
+}
+
 
 
 {
