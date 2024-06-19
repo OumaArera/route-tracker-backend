@@ -562,28 +562,39 @@ def send_email_to_merchandiser(data):
 @app.route("/users/manager-routes/<int:id>", methods=["GET"])
 @jwt_required()
 def get_manager_routes(id):
+    current_date = datetime.now()
+    start_of_month = current_date.replace(day=1)
+    start_of_next_month = (start_of_month.replace(month=start_of_month.month % 12 + 1) if start_of_month.month != 12 else start_of_month.replace(year=start_of_month.year + 1, month=1))
 
     routes = RoutePlan.query.filter_by(manager_id=id).all()
 
-    if not routes:
-        return jsonify({'message': 'You have no route plans found',"successful": False,"status_code": 404}), 404
-    
     routes_list = []
-
     for route in routes:
-        merchandiser = User.query.filter_by(id=route.merchandiser_id).first()
-        
-        if merchandiser:
-            merchandiser_name = f"{merchandiser.first_name} {merchandiser.last_name}"
-            staff_no = merchandiser.staff_no
+        start_date = datetime.strptime(route.date_range['start_date'], '%Y-%m-%d')
 
-        else:
-            merchandiser_name = None
-            staff_no = None
-        
-        routes_list.append({ "id": route.id, "instructions": route.instructions, "manager_id": route.manager_id, "date_range": route.date_range, "merchandiser_name": merchandiser_name, "staff_no": staff_no, "status": route.status})
+        if start_of_month <= start_date < start_of_next_month:
+            merchandiser = User.query.filter_by(id=route.merchandiser_id).first()
+            if merchandiser:
+                merchandiser_name = f"{merchandiser.first_name} {merchandiser.last_name}"
+                staff_no = merchandiser.staff_no
+            else:
+                merchandiser_name = None
+                staff_no = None
 
-    return jsonify({"successful": True,"status_code": 200,"message": routes_list}), 200
+            routes_list.append({
+                "id": route.id,
+                "instructions": route.instructions,
+                "manager_id": route.manager_id,
+                "date_range": route.date_range,
+                "merchandiser_name": merchandiser_name,
+                "staff_no": staff_no,
+                "status": route.status
+            })
+
+    if not routes_list:
+        return jsonify({'message': 'You have no route plans found for this month', "successful": False, "status_code": 404}), 404
+
+    return jsonify({"successful": True, "status_code": 200, "message": routes_list}), 200
 
 
 @app.route("/users/delete-route-plans/<int:id>", methods=["DELETE"])
