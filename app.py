@@ -1564,7 +1564,6 @@ def create_response():
         return jsonify({"message": f"Failed to store response: {str(e)}", "status_code": 500, "successful": False}), 500
 
 
-
 @app.route("/users/assign/merchandiser", methods=["POST"])
 @jwt_required()
 def assign_merchandiser():
