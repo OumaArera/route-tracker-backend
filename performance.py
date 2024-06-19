@@ -115,11 +115,11 @@ print("Hello, World!")
 }
 
 {
-    "instruction 1": {
+    "Shelf Space": {
         "text": "text response",
         "image": "image"
     },
-    "instruction 2": {
+    "Competitors Branding Strategies": {
         "text": "text response",
         "image": None
     }
