@@ -100,9 +100,7 @@ class Response(db.Model):
     response = db.Column(JSON, nullable=False)
     date_time = db.Column(db.DateTime, nullable=False)
     status = db.Column(db.String(10), nullable=False)
-    kpi_id = db.Column(db.Integer, ForeignKey("key_performance_indicators.id"), nullable=False)
-
-    key_pi_ais = db.relationship("KeyPerformaceIndicator", backref=db.backref('responses', lazy=True))
+    
     merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('merchandiser_responses', lazy=True))
     manager = db.relationship('User', foreign_keys=[manager_id], backref=db.backref('manager_responses', lazy=True))
 
