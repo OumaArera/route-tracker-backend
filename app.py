@@ -1526,20 +1526,27 @@ def create_response():
         # Process response data
         for key in request.form.keys():
             if key.startswith('response['):
-                _, field, type_ = key.split('[')[1], key.split('[')[2].split(']')[0], key.split(']')[1][1:]
-                if field not in responses:
-                    responses[field] = {}
-                if type_ == 'image':
+                category = key.split('[')[1].split(']')[0]  # Extract category name
+                field_type = key.split('[')[2].split(']')[0]  # Extract 'text' or 'image'
+
+                if category not in responses:
+                    responses[category] = {
+                        "text": "",
+                        "image": ""
+                    }
+
+                if field_type == 'image':
                     # Handle image file upload
                     file = request.files[key]
                     if file and allowed_file(file.filename):
                         filename = secure_filename(file.filename)
                         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                        responses[field][type_] = filename
+                        responses[category]['image'] = filename
                 else:
                     # Handle text data
-                    responses[field][type_] = request.form[key]
+                    responses[category]['text'] = request.form[key]
 
+        # Create new Response object
         new_response = Response(
             merchandiser_id=merchandiser_id,
             manager_id=manager_id,
@@ -1555,6 +1562,8 @@ def create_response():
 
     except Exception as e:
         return jsonify({"message": f"Failed to store response: {str(e)}", "status_code": 500, "successful": False}), 500
+
+
 
 @app.route("/users/assign/merchandiser", methods=["POST"])
 @jwt_required()
