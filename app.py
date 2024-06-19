@@ -19,6 +19,10 @@ import re
 from sqlalchemy.orm import joinedload
 import calendar
 from sqlalchemy import extract
+from werkzeug.utils import secure_filename
+
+
+
 
 
 from models import User,  RoutePlan, Location, Notification, ActivityLog, Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance
@@ -37,6 +41,16 @@ app.config['SMTP_USERNAME'] = os.getenv("SMTP_USERNAME")
 app.config['SMTP_PASSWORD'] = os.getenv("SMTP_PASSWORD")
 app.config['SMTP_PORT'] = os.getenv("SMTP_PORT")
 
+
+UPLOAD_FOLDER = os.path.join(os.getcwd(), 'Images')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+# Ensure the upload folder exists
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+# Configure Flask app
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 
 db.init_app(app)
@@ -1469,44 +1483,66 @@ def approve_response():
         return jsonify({"message": f"Failed to approve the response: Error: {err}", "status_code": 500, "successful": False}), 500
 
 
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 @app.route("/users/post/response", methods=["POST"])
 @jwt_required()
 def create_response():
-    data = request.get_json()
+    if 'merchandiser_id' not in request.form or 'manager_id' not in request.form or 'date_time' not in request.form or 'status' not in request.form:
+        return jsonify({"message": "Missing required fields.", "status_code": 400, "successful": False}), 400
 
-    if not data:
-        return jsonify({"message": "Invalid data: You did not provide any data.", "status_code": 400, "successful": False}), 400
-    
-    merchandiser_id = data.get("merchandiser_id")
-    manager_id = data.get("manager_id")
-    response = data.get("response")
-    date_time = data.get("date_time")
-    status = data.get("status").lower() if data.get("status") else None
+    merchandiser_id = request.form.get("merchandiser_id")
+    manager_id = request.form.get("manager_id")
+    date_time = request.form.get("date_time")
+    status = request.form.get("status").lower()
 
-    if not all([merchandiser_id, manager_id, response, date_time, status]):
-        return jsonify({ "message": "Missing required fields.", "status_code": 400, "successful": False}), 400
-    
+    if status != "pending":
+        return jsonify({"message": "Status must be pending", "status_code": 400, "successful": False}), 400
+
+    response = {}
+
+    for key in request.form.keys():
+        if key.startswith('response['):
+            _, field, type_ = key.split('[')[1], key.split('[')[2].split(']')[0], key.split(']')[1][1:]
+            if field not in response:
+                response[field] = {}
+            response[field][type_] = request.form[key]
+
+    for key in request.files.keys():
+        if key.startswith('response['):
+            _, field, type_ = key.split('[')[1], key.split('[')[2].split(']')[0], key.split(']')[1][1:]
+            if field not in response:
+                response[field] = {}
+            file = request.files[key]
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                response[field][type_] = filename
+
     try:
-        response = json.loads(response)
         date_time = datetime.strptime(date_time, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return jsonify({"message": "Invalid date format.", "status_code": 400, "successful": False}), 400
 
-    except Exception:
-        return jsonify({ "message": "Provide response body as JSON type and time in the format '%Y-%m-%d %H:%M:%S'", "status_code": 400, "successful": False}), 400
-    
-    if status == "pending":
-        return jsonify({"message": "Status must be pending","status_code": 400,"successful": False}), 400
-    
-    new_response = Response( merchandiser_id=merchandiser_id, manager_id=manager_id, response=response, date_time=date_time, status=status)
+    new_response = Response(
+        merchandiser_id=merchandiser_id,
+        manager_id=manager_id,
+        response=response,
+        date_time=date_time,
+        status=status
+    )
 
     try:
         db.session.add(new_response)
         db.session.commit()
-        return jsonify({"message": "Response sent successfully.","status_code": 201,"successful": True}), 201
-
+        return jsonify({"message": "Response sent successfully.", "status_code": 201, "successful": True}), 201
     except Exception as err:
         db.session.rollback()
-        return jsonify({"message": f"Failed to send response: Error: {err}","status_code": 500,"successful": False}), 500
-    
+        return jsonify({"message": f"Failed to send response: Error: {err}", "status_code": 500, "successful": False}), 500
+
+
+
 @app.route("/users/assign/merchandiser", methods=["POST"])
 @jwt_required()
 def assign_merchandiser():
