@@ -652,10 +652,10 @@ def modify_route(id):
         db.session.rollback()
         return jsonify({'message': f'Error committing to database: {err}',"successful": False, "status_code": 500 }), 500
 
+
 @app.route('/users/route-plans', methods=['GET', 'POST'])
 @jwt_required()
 def route_plan_details():
-
     if request.method == 'GET':
         route_plans = RoutePlan.query.all()
         if not route_plans:
@@ -663,18 +663,25 @@ def route_plan_details():
 
         route_plan_list = []
         for route_plan in route_plans:
-            route_plan_info = {'id': route_plan.id, 'merchandiser_id': route_plan.merchandiser_id,'manager_id': route_plan.manager_id, 'date_range': route_plan.date_range, 'instructions': route_plan.instructions, 'status': route_plan.status}
+            route_plan_info = {
+                'id': route_plan.id,
+                'merchandiser_id': route_plan.merchandiser_id,
+                'manager_id': route_plan.manager_id,
+                'date_range': route_plan.date_range,
+                'instructions': route_plan.instructions,
+                'status': route_plan.status
+            }
             route_plan_list.append(route_plan_info)
 
         user_id = get_jwt_identity()
         log_activity('Viewed merchandiser routes', user_id)
 
-        return jsonify({ "successful": True,"status_code": 200,'message': route_plan_list }), 200
+        return jsonify({"successful": True, "status_code": 200, 'message': route_plan_list}), 200
 
     elif request.method == 'POST':
         data = request.get_json()
         if not data:
-            return jsonify({"message": "Invalid request","successful": False,"status_code": 400}), 400
+            return jsonify({"message": "Invalid request", "successful": False, "status_code": 400}), 400
 
         manager_id = data.get('manager_id')
         date_range = data.get('date_range')
@@ -686,32 +693,65 @@ def route_plan_details():
 
         # Check for required fields
         if not all([staff_no, manager_id, date_range, status]):
-            return jsonify({'message': 'Missing required fields',"successful": False, "status_code": 400}), 400
-        
+            return jsonify({'message': 'Missing required fields', "successful": False, "status_code": 400}), 400
+
         try:
             staff_no = int(staff_no)
             manager_id = int(manager_id)
         except ValueError:
-            return jsonify({'message': 'Staff number and Manager ID must be integers',"successful": False, "status_code": 400}), 400
-        
+            return jsonify({'message': 'Staff number and Manager ID must be integers', "successful": False, "status_code": 400}), 400
+
         if not isinstance(date_range, dict):
-            return jsonify({'message': 'Date range must be a dictionary',"successful": False,"status_code": 400}), 400
+            return jsonify({'message': 'Date range must be a dictionary', "successful": False, "status_code": 400}), 400
 
         start_date = date_range.get('start_date')
         end_date = date_range.get('end_date')
 
         if not all([start_date, end_date]):
-            return jsonify({'message': 'Missing start_date or end_date in date_range', "successful": False,"status_code": 400}), 400
+            return jsonify({'message': 'Missing start_date or end_date in date_range', "successful": False, "status_code": 400}), 400
 
         if status not in ['complete', 'pending']:
-            return jsonify({'message': 'Status must be either "complete" or "pending"',"successful": False,"status_code": 400}), 400
-        
-        user = User.query.filter_by(staff_no=staff_no, role='merchandiser').first()
+            return jsonify({'message': 'Status must be either "complete" or "pending"', "successful": False, "status_code": 400}), 400
 
+        user = User.query.filter_by(staff_no=staff_no, role='merchandiser').first()
         if not user:
             return jsonify({'message': 'Invalid staff number or user is not a merchandiser', "successful": False, "status_code": 400}), 400
 
-        new_route_plan = RoutePlan(merchandiser_id=user.id,manager_id=manager_id, date_range=date_range,instructions=instructions_json,status=status)
+        # Check if the date_range falls within the current month
+        current_date = datetime.now(timezone.utc).date()
+        first_day_of_month = current_date.replace(day=1)
+        last_day_of_month = (first_day_of_month + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+
+        start_date_dt = datetime.fromisoformat(start_date).date()
+        end_date_dt = datetime.fromisoformat(end_date).date()
+        print(f"First day of the month: {first_day_of_month}. Start date: {start_date_dt}. Last day of the month: {last_day_of_month}")
+        print(f"First day of the month: {first_day_of_month}. End date: {end_date_dt}. Last day of the month: {last_day_of_month}")
+        if not (first_day_of_month <= start_date_dt <= last_day_of_month) or not (first_day_of_month <= end_date_dt <= last_day_of_month):
+            return jsonify({'message': 'Assignments can only be made for the current month', "successful": False, "status_code": 400}), 400
+
+        existing_plans = RoutePlan.query.filter_by(merchandiser_id=user.id).all()
+        for plan in existing_plans:
+            plan_start_date = datetime.fromisoformat(plan.date_range['start_date']).date()
+            plan_end_date = datetime.fromisoformat(plan.date_range['end_date']).date()
+            if (plan_start_date.month == current_date.month and plan_end_date.month == current_date.month):
+                plan_instructions = json.loads(plan.instructions)
+                for new_instruction in instructions:
+                    new_instruction_start = datetime.fromisoformat(new_instruction['start']).replace(tzinfo=timezone.utc)
+                    new_instruction_end = datetime.fromisoformat(new_instruction['end']).replace(tzinfo=timezone.utc)
+                    for existing_instruction in plan_instructions:
+                        existing_instruction_start = datetime.fromisoformat(existing_instruction['start']).replace(tzinfo=timezone.utc)
+                        existing_instruction_end = datetime.fromisoformat(existing_instruction['end']).replace(tzinfo=timezone.utc)
+                        if (new_instruction_start.date() == existing_instruction_start.date() and
+                            (new_instruction_start <= existing_instruction_end and new_instruction_end >= existing_instruction_start)):
+                            return jsonify({'message': f'{user.first_name} {user.last_name} already has another assignment on {new_instruction_start.date()}', "successful": False, "status_code": 400}), 400
+
+        new_route_plan = RoutePlan(
+            merchandiser_id=user.id,
+            manager_id=manager_id,
+            date_range=date_range,
+            instructions=instructions_json,
+            status=status
+        )
 
         try:
             db.session.add(new_route_plan)
@@ -720,10 +760,12 @@ def route_plan_details():
             user_id = get_jwt_identity()
             log_activity('Created merchandiser routes', user_id)
             return jsonify({'message': 'Route plan created successfully', "successful": True, "status_code": 201}), 201
-        
+
         except Exception as err:
             db.session.rollback()
-            return jsonify({'message': f"Internal server error. Error: {err}","successful": False,"status_code": 500}), 500
+            return jsonify({'message': f"Internal server error. Error: {err}", "successful": False, "status_code": 500}), 500
+
+
 
 @app.route("/users/change-route-status/<int:id>", methods=["PUT"])
 @jwt_required()
