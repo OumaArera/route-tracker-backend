@@ -20,6 +20,7 @@ from sqlalchemy.orm import joinedload
 import calendar
 from sqlalchemy import extract
 from werkzeug.utils import secure_filename
+from flask import send_from_directory
 
 
 
@@ -1424,6 +1425,13 @@ def create_facility():
         return jsonify({ "message": f"Failed to create facility: Error:  {err}", "status_code": 500, "successful": False}), 500
 
 
+
+
+@app.route('/images/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
 @app.route("/users/get-responses/<int:manager_id>", methods=["GET"])
 @jwt_required()
 def get_responses(manager_id):
@@ -1453,7 +1461,7 @@ def get_responses(manager_id):
             for key, value in response.response.items():
                 formatted_response["response"][key] = {
                     "text": value.get("text", ""),
-                    "image": value.get("image", "")
+                    "image": ""
                 }
                 if value.get("image"):
                     formatted_response["response"][key]["image"] = f"{request.url_root}images/{value['image']}"
@@ -1464,7 +1472,6 @@ def get_responses(manager_id):
 
     except Exception as e:
         return jsonify({"message": f"Failed to retrieve responses: {str(e)}", "status_code": 500, "successful": False}), 500
-
 
 
 @app.route("/users/approve/response", methods=["PUT"])
@@ -1505,7 +1512,7 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route("/users/post/response", methods=["POST"])
-@jwt_required()  
+@jwt_required()
 def create_response():
     try:
         # Extract data from request
@@ -1551,7 +1558,7 @@ def create_response():
                 if field_type == 'text':
                     # Handle text data
                     responses[category]['text'] = request.form[key]
-        
+
         for key in request.files.keys():
             if key.startswith('response['):
                 category = key.split('[')[1].split(']')[0]  # Extract category name
@@ -1564,7 +1571,7 @@ def create_response():
                         filename = secure_filename(file.filename)
                         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                         file.save(file_path)
-                        responses[category]['image'] = file_path
+                        responses[category]['image'] = filename
 
         # Retrieve the route plan and update the instruction status
         route_plan = RoutePlan.query.filter_by(id=route_plan_id).first()
@@ -1587,7 +1594,6 @@ def create_response():
         route_plan.instructions = json.dumps(instructions)
         db.session.commit()
 
-
         # Create new Response object
         new_response = Response(
             merchandiser_id=merchandiser_id,
@@ -1601,7 +1607,6 @@ def create_response():
         db.session.add(new_response)
         db.session.commit()
 
-        # For demonstration, returning a success response
         return jsonify({"message": "Response stored successfully.", "status_code": 201, "successful": True}), 201
 
     except Exception as e:
