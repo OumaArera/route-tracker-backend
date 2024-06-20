@@ -20,6 +20,7 @@ from sqlalchemy.orm import joinedload
 import calendar
 from sqlalchemy import extract
 from werkzeug.utils import secure_filename
+from flask import send_from_directory
 
 
 
@@ -40,17 +41,8 @@ app.config['SMTP_SERVER_ADDRESS'] = os.getenv("SMTP_SERVER_ADDRESS")
 app.config['SMTP_USERNAME'] = os.getenv("SMTP_USERNAME")
 app.config['SMTP_PASSWORD'] = os.getenv("SMTP_PASSWORD")
 app.config['SMTP_PORT'] = os.getenv("SMTP_PORT")
-
-
-UPLOAD_FOLDER = os.path.join(os.getcwd(), 'Images')
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-
-# Ensure the upload folder exists
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-
-# Configure Flask app
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'Images')
+app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'Images')
 
 
 db.init_app(app)
@@ -62,6 +54,12 @@ bcrypt = Bcrypt(app)
 api = Api(app)
 
 CORS(app)
+
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
+
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
 
 blacklist = set()
 
@@ -1424,6 +1422,11 @@ def create_facility():
         return jsonify({ "message": f"Failed to create facility: Error:  {err}", "status_code": 500, "successful": False}), 500
 
 
+@app.route('/images/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
 @app.route("/users/get-responses/<int:manager_id>", methods=["GET"])
 @jwt_required()
 def get_responses(manager_id):
@@ -1453,7 +1456,7 @@ def get_responses(manager_id):
             for key, value in response.response.items():
                 formatted_response["response"][key] = {
                     "text": value.get("text", ""),
-                    "image": value.get("image", "")
+                    "image": ""
                 }
                 if value.get("image"):
                     formatted_response["response"][key]["image"] = f"{request.url_root}images/{value['image']}"
@@ -1464,7 +1467,6 @@ def get_responses(manager_id):
 
     except Exception as e:
         return jsonify({"message": f"Failed to retrieve responses: {str(e)}", "status_code": 500, "successful": False}), 500
-
 
 
 @app.route("/users/approve/response", methods=["PUT"])
@@ -1505,7 +1507,7 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route("/users/post/response", methods=["POST"])
-@jwt_required()  
+@jwt_required()
 def create_response():
     try:
         # Extract data from request
@@ -1551,7 +1553,7 @@ def create_response():
                 if field_type == 'text':
                     # Handle text data
                     responses[category]['text'] = request.form[key]
-        
+
         for key in request.files.keys():
             if key.startswith('response['):
                 category = key.split('[')[1].split(']')[0]  # Extract category name
@@ -1564,7 +1566,7 @@ def create_response():
                         filename = secure_filename(file.filename)
                         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                         file.save(file_path)
-                        responses[category]['image'] = file_path
+                        responses[category]['image'] = filename
 
         # Retrieve the route plan and update the instruction status
         route_plan = RoutePlan.query.filter_by(id=route_plan_id).first()
@@ -1587,7 +1589,6 @@ def create_response():
         route_plan.instructions = json.dumps(instructions)
         db.session.commit()
 
-
         # Create new Response object
         new_response = Response(
             merchandiser_id=merchandiser_id,
@@ -1601,7 +1602,6 @@ def create_response():
         db.session.add(new_response)
         db.session.commit()
 
-        # For demonstration, returning a success response
         return jsonify({"message": "Response stored successfully.", "status_code": 201, "successful": True}), 201
 
     except Exception as e:
@@ -1623,6 +1623,53 @@ def delete_responses(id):
             return jsonify({"message": f"Failed to delete response: {err}", "status_code": 500, "successful": False}), 500
     else:
         return jsonify({"message": "Response not found", "status_code": 404, "successful": False}), 404
+
+
+@app.route("/users/reject/response/<int:id>", methods=["PUT"])
+@jwt_required()
+def reject_response(id):
+    data = request.get_json()
+    route_plan_id = data.get("route_plan_id")
+    instruction_id = data.get("instruction_id")
+
+    if not all([route_plan_id, instruction_id]):
+        return jsonify({"message": "Missing required fields", "successful": False, "status_code": 400}), 400
+    
+    try:
+        route_plan = RoutePlan.query.filter_by(id=route_plan_id).first()
+        if not route_plan:
+            return jsonify({"message": "Route plan not found.", "status_code": 404, "successful": False}), 404
+
+        instructions = json.loads(route_plan.instructions)
+        instruction_found = False
+
+        for instruction in instructions:
+            if instruction['id'] == instruction_id:
+                instruction['status'] = 'pending'
+                instruction_found = True
+                break
+
+        if not instruction_found:
+            return jsonify({"message": "Instruction not found.", "status_code": 404, "successful": False}), 404
+
+        # Persist the updated instructions
+        route_plan.instructions = json.dumps(instructions)
+        db.session.commit()
+
+        response = Response.query.filter_by(id=id).first()
+        if not response:
+            return jsonify({"message": "Response not found.", "successful": False, "status_code": 400}), 400
+        
+        response.status = "rejected"
+        db.session.commit()
+
+        return jsonify({"message": "Response rejected and instructions updated successfully.", "successful": True, "status_code": 200}), 200
+
+    except Exception as e:
+        db.session.rollback()  # Rollback in case of error
+        return jsonify({"message": f"An error occurred: {str(e)}", "successful": False, "status_code": 500}), 500
+
+
 
 @app.route("/users/assign/merchandiser", methods=["POST"])
 @jwt_required()
