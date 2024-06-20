@@ -41,17 +41,8 @@ app.config['SMTP_SERVER_ADDRESS'] = os.getenv("SMTP_SERVER_ADDRESS")
 app.config['SMTP_USERNAME'] = os.getenv("SMTP_USERNAME")
 app.config['SMTP_PASSWORD'] = os.getenv("SMTP_PASSWORD")
 app.config['SMTP_PORT'] = os.getenv("SMTP_PORT")
-
-
-UPLOAD_FOLDER = os.path.join(os.getcwd(), 'Images')
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-
-# Ensure the upload folder exists
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-
-# Configure Flask app
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'Images')
+app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'Images')
 
 
 db.init_app(app)
@@ -63,6 +54,12 @@ bcrypt = Bcrypt(app)
 api = Api(app)
 
 CORS(app)
+
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
+
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
 
 blacklist = set()
 
@@ -1423,8 +1420,6 @@ def create_facility():
     except Exception as err:
         db.session.rollback()
         return jsonify({ "message": f"Failed to create facility: Error:  {err}", "status_code": 500, "successful": False}), 500
-
-
 
 
 @app.route('/images/<filename>')
