@@ -95,9 +95,11 @@ class Response(db.Model):
     __tablename__ = "responses"
 
     id = db.Column(db.Integer, primary_key=True)
-    merchandiser_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
-    manager_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
-    response = db.Column(JSON, nullable=False)
+    merchandiser_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    manager_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    route_plan_id = db.Column(db.Integer, nullable=False)
+    instruction_id = db.Column(db.Integer, nullable=False)
+    response = db.Column(db.JSON, nullable=False)
     date_time = db.Column(db.DateTime, nullable=False)
     status = db.Column(db.String(10), nullable=False)
     
