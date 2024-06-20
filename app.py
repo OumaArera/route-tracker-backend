@@ -1505,7 +1505,7 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route("/users/post/response", methods=["POST"])
-@jwt_required()  # Ensure endpoint requires a valid JWT token
+@jwt_required()  
 def create_response():
     try:
         # Extract data from request
@@ -1571,7 +1571,7 @@ def create_response():
         if not route_plan:
             return jsonify({"message": "Route plan not found.", "status_code": 404, "successful": False}), 404
 
-        instructions = route_plan.instructions
+        instructions = json.loads(route_plan.instructions)
         instruction_found = False
 
         for instruction in instructions:
@@ -1583,9 +1583,10 @@ def create_response():
         if not instruction_found:
             return jsonify({"message": "Instruction not found.", "status_code": 404, "successful": False}), 404
 
-        # Persist the updated route plan
-        route_plan.instructions = instructions
+        # Persist the updated instructions
+        route_plan.instructions = json.dumps(instructions)
         db.session.commit()
+
 
         # Create new Response object
         new_response = Response(
