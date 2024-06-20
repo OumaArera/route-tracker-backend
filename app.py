@@ -1442,6 +1442,8 @@ def get_responses(manager_id):
                 "id": response.id,
                 "merchandiser": f"{response.merchandiser.first_name} {response.merchandiser.last_name}",
                 "manager_id": response.manager_id,
+                "route_plan_id": response.route_plan_id,
+                "instruction_id": response.instruction_id,
                 "date_time": response.date_time.strftime("%a, %d %b %Y %H:%M:%S GMT"),
                 "status": response.status,
                 "response": {}
@@ -1462,6 +1464,7 @@ def get_responses(manager_id):
 
     except Exception as e:
         return jsonify({"message": f"Failed to retrieve responses: {str(e)}", "status_code": 500, "successful": False}), 500
+
 
 
 @app.route("/users/approve/response", methods=["PUT"])
@@ -1563,6 +1566,27 @@ def create_response():
                         file.save(file_path)
                         responses[category]['image'] = file_path
 
+        # Retrieve the route plan and update the instruction status
+        route_plan = RoutePlan.query.filter_by(id=route_plan_id).first()
+        if not route_plan:
+            return jsonify({"message": "Route plan not found.", "status_code": 404, "successful": False}), 404
+
+        instructions = route_plan.instructions
+        instruction_found = False
+
+        for instruction in instructions:
+            if instruction['id'] == instruction_id:
+                instruction['status'] = 'submitted'
+                instruction_found = True
+                break
+
+        if not instruction_found:
+            return jsonify({"message": "Instruction not found.", "status_code": 404, "successful": False}), 404
+
+        # Persist the updated route plan
+        route_plan.instructions = instructions
+        db.session.commit()
+
         # Create new Response object
         new_response = Response(
             merchandiser_id=merchandiser_id,
@@ -1581,7 +1605,6 @@ def create_response():
 
     except Exception as e:
         return jsonify({"message": f"Failed to store response: {str(e)}", "status_code": 500, "successful": False}), 500
-
 
 
 @app.route("/users/delete/responses/<int:id>", methods=["DELETE"])
