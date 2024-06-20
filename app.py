@@ -19,6 +19,10 @@ import re
 from sqlalchemy.orm import joinedload
 import calendar
 from sqlalchemy import extract
+from werkzeug.utils import secure_filename
+
+
+
 
 
 from models import User,  RoutePlan, Location, Notification, ActivityLog, Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance
@@ -37,6 +41,16 @@ app.config['SMTP_USERNAME'] = os.getenv("SMTP_USERNAME")
 app.config['SMTP_PASSWORD'] = os.getenv("SMTP_PASSWORD")
 app.config['SMTP_PORT'] = os.getenv("SMTP_PORT")
 
+
+UPLOAD_FOLDER = os.path.join(os.getcwd(), 'Images')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+# Ensure the upload folder exists
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+# Configure Flask app
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 
 db.init_app(app)
@@ -1413,27 +1427,42 @@ def create_facility():
 @app.route("/users/get-responses/<int:manager_id>", methods=["GET"])
 @jwt_required()
 def get_responses(manager_id):
-    # responses = Response.query.filter_by(manager_id=manager_id, status="pending").all()
-    responses = db.session.query(Response).join(User, Response.merchandiser_id == User.id) \
-        .filter(Response.manager_id == manager_id, Response.status == "pending") \
-        .options(joinedload(Response.merchandiser)).all()
+    try:
+        responses = db.session.query(Response).join(User, Response.merchandiser_id == User.id) \
+            .filter(Response.manager_id == manager_id, Response.status == "pending") \
+            .options(joinedload(Response.merchandiser)).all()
 
-    if not responses:
-        return jsonify({"message": "There are no responses yet.", "status_code": 404, "successful": False}), 404
-    
-    responses_list = []
+        if not responses:
+            return jsonify({"message": "There are no responses yet.", "status_code": 404, "successful": False}), 404
 
-    for response in responses:
-        responses_list.append({
-            "id": response.id,
-            "merchandiser": f"{response.merchandiser.first_name} {response.merchandiser.last_name}",
-            "manager_id": response.manager_id,
-            "response": response.response,
-            "date_time": response.date_time,
-            "status": response.status})
+        responses_list = []
 
-    return jsonify({"message": responses_list, "status_code": 200, "successful": True}), 200
-    
+        for response in responses:
+            formatted_response = {
+                "id": response.id,
+                "merchandiser": f"{response.merchandiser.first_name} {response.merchandiser.last_name}",
+                "manager_id": response.manager_id,
+                "date_time": response.date_time.strftime("%a, %d %b %Y %H:%M:%S GMT"),
+                "status": response.status,
+                "response": {}
+            }
+
+            # Process response data including images
+            for key, value in response.response.items():
+                formatted_response["response"][key] = {
+                    "text": value.get("text", ""),
+                    "image": value.get("image", "")
+                }
+                if value.get("image"):
+                    formatted_response["response"][key]["image"] = f"{request.url_root}images/{value['image']}"
+
+            responses_list.append(formatted_response)
+
+        return jsonify({"message": responses_list, "status_code": 200, "successful": True}), 200
+
+    except Exception as e:
+        return jsonify({"message": f"Failed to retrieve responses: {str(e)}", "status_code": 500, "successful": False}), 500
+
 
 @app.route("/users/approve/response", methods=["PUT"])
 @jwt_required()
@@ -1469,44 +1498,80 @@ def approve_response():
         return jsonify({"message": f"Failed to approve the response: Error: {err}", "status_code": 500, "successful": False}), 500
 
 
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 @app.route("/users/post/response", methods=["POST"])
-@jwt_required()
+@jwt_required()  # Ensure endpoint requires a valid JWT token
 def create_response():
-    data = request.get_json()
-
-    if not data:
-        return jsonify({"message": "Invalid data: You did not provide any data.", "status_code": 400, "successful": False}), 400
-    
-    merchandiser_id = data.get("merchandiser_id")
-    manager_id = data.get("manager_id")
-    response = data.get("response")
-    date_time = data.get("date_time")
-    status = data.get("status").lower() if data.get("status") else None
-
-    if not all([merchandiser_id, manager_id, response, date_time, status]):
-        return jsonify({ "message": "Missing required fields.", "status_code": 400, "successful": False}), 400
-    
     try:
-        response = json.loads(response)
-        date_time = datetime.strptime(date_time, "%Y-%m-%d %H:%M:%S")
+        # Extract data from request
+        merchandiser_id = request.form.get("merchandiser_id")
+        manager_id = request.form.get("manager_id")
+        date_time = request.form.get("date_time")
+        status = request.form.get("status").lower()
+        responses = {}
 
-    except Exception:
-        return jsonify({ "message": "Provide response body as JSON type and time in the format '%Y-%m-%d %H:%M:%S'", "status_code": 400, "successful": False}), 400
-    
-    if status == "pending":
-        return jsonify({"message": "Status must be pending","status_code": 400,"successful": False}), 400
-    
-    new_response = Response( merchandiser_id=merchandiser_id, manager_id=manager_id, response=response, date_time=date_time, status=status)
+        # Validate required fields
+        if not all([merchandiser_id, manager_id, date_time, status]):
+            return jsonify({"message": "Missing required fields.", "status_code": 400, "successful": False}), 400
 
-    try:
+        # Ensure status is 'pending'
+        if status != "pending":
+            return jsonify({"message": "Status must be 'pending'", "status_code": 400, "successful": False}), 400
+
+        # Parse date_time string into datetime object
+        date_time = datetime.strptime(date_time, "%Y-%m-%d").date()
+
+        # Process response data
+        for key in request.form.keys():
+            if key.startswith('response['):
+                category = key.split('[')[1].split(']')[0]  # Extract category name
+                field_type = key.split('[')[2].split(']')[0]  # Extract 'text' or 'image'
+
+                if category not in responses:
+                    responses[category] = {
+                        "text": "",
+                        "image": ""
+                    }
+
+                if field_type == 'text':
+                    # Handle text data
+                    responses[category]['text'] = request.form[key]
+        
+        for key in request.files.keys():
+            if key.startswith('response['):
+                category = key.split('[')[1].split(']')[0]  # Extract category name
+                field_type = key.split('[')[2].split(']')[0]  # Extract 'text' or 'image'
+
+                if field_type == 'image':
+                    # Handle image file upload
+                    file = request.files[key]
+                    if file and allowed_file(file.filename):
+                        filename = secure_filename(file.filename)
+                        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                        file.save(file_path)
+                        responses[category]['image'] = file_path
+
+        # Create new Response object
+        new_response = Response(
+            merchandiser_id=merchandiser_id,
+            manager_id=manager_id,
+            response=responses,
+            date_time=date_time,
+            status=status
+        )
         db.session.add(new_response)
         db.session.commit()
-        return jsonify({"message": "Response sent successfully.","status_code": 201,"successful": True}), 201
 
-    except Exception as err:
-        db.session.rollback()
-        return jsonify({"message": f"Failed to send response: Error: {err}","status_code": 500,"successful": False}), 500
-    
+        # For demonstration, returning a success response
+        return jsonify({"message": "Response stored successfully.", "status_code": 201, "successful": True}), 201
+
+    except Exception as e:
+        return jsonify({"message": f"Failed to store response: {str(e)}", "status_code": 500, "successful": False}), 500
+
+
+
 @app.route("/users/assign/merchandiser", methods=["POST"])
 @jwt_required()
 def assign_merchandiser():
@@ -1600,7 +1665,6 @@ def get_manager_merchandisers(manager_id):
                 pass
 
     return jsonify({"message": assigned_merchandisers_list, "status_code": 200, "successful": True}), 200
-
 
 
 def merchandiser_performance(merchandiser_id, new_scores):
