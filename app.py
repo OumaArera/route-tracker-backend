@@ -1624,6 +1624,46 @@ def delete_responses(id):
     else:
         return jsonify({"message": "Response not found", "status_code": 404, "successful": False}), 404
 
+@app.route("/users/reject/response/<int:id>", methods=["PUT"])
+@jwt_required()
+def reject_response(id):
+
+    data = request.get_json()
+    route_plan_id = data.get("route_plan_id")
+    instruction_id = data.get("instruction_id")
+
+    if not all([route_plan_id, instruction_id]):
+        return jsonify({"message": "Missing required fields", "successful": False, "status_code": 400}), 400
+    
+    route_plan = RoutePlan.query.filter_by(id=route_plan_id).first()
+    if not route_plan:
+        return jsonify({"message": "Route plan not found.", "status_code": 404, "successful": False}), 404
+
+    instructions = json.loads(route_plan.instructions)
+    instruction_found = False
+
+    for instruction in instructions:
+        if instruction['id'] == instruction_id:
+            instruction['status'] = 'pending'
+            instruction_found = True
+            break
+
+    if not instruction_found:
+        return jsonify({"message": "Instruction not found.", "status_code": 404, "successful": False}), 404
+
+    # Persist the updated instructions
+    route_plan.instructions = json.dumps(instructions)
+    db.session.commit()
+
+    response = Response.query.filter_by(id=id).first()
+
+    if not response:
+        return jsonify({"message": "Response not found.", "successful": False, "status_code": 400}), 400
+    
+    response.status = "rejected"
+    db.session.commit()
+
+
 @app.route("/users/assign/merchandiser", methods=["POST"])
 @jwt_required()
 def assign_merchandiser():
