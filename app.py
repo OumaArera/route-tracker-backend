@@ -1442,6 +1442,8 @@ def get_responses(manager_id):
                 "id": response.id,
                 "merchandiser": f"{response.merchandiser.first_name} {response.merchandiser.last_name}",
                 "manager_id": response.manager_id,
+                "route_plan_id": response.route_plan_id,
+                "instruction_id": response.instruction_id,
                 "date_time": response.date_time.strftime("%a, %d %b %Y %H:%M:%S GMT"),
                 "status": response.status,
                 "response": {}
@@ -1462,6 +1464,7 @@ def get_responses(manager_id):
 
     except Exception as e:
         return jsonify({"message": f"Failed to retrieve responses: {str(e)}", "status_code": 500, "successful": False}), 500
+
 
 
 @app.route("/users/approve/response", methods=["PUT"])
@@ -1502,23 +1505,33 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route("/users/post/response", methods=["POST"])
-@jwt_required()  # Ensure endpoint requires a valid JWT token
+@jwt_required()  
 def create_response():
     try:
         # Extract data from request
         merchandiser_id = request.form.get("merchandiser_id")
         manager_id = request.form.get("manager_id")
+        route_plan_id = request.form.get("route_plan_id")
+        instruction_id = request.form.get("instruction_id")
         date_time = request.form.get("date_time")
         status = request.form.get("status").lower()
         responses = {}
 
         # Validate required fields
-        if not all([merchandiser_id, manager_id, date_time, status]):
+        if not all([merchandiser_id, manager_id, route_plan_id, instruction_id, date_time, status]):
             return jsonify({"message": "Missing required fields.", "status_code": 400, "successful": False}), 400
 
         # Ensure status is 'pending'
         if status != "pending":
             return jsonify({"message": "Status must be 'pending'", "status_code": 400, "successful": False}), 400
+
+        # Convert IDs to integers
+        try:
+            merchandiser_id = int(merchandiser_id)
+            manager_id = int(manager_id)
+            route_plan_id = int(route_plan_id)
+        except ValueError:
+            return jsonify({"message": "ID fields must be integers.", "status_code": 400, "successful": False}), 400
 
         # Parse date_time string into datetime object
         date_time = datetime.strptime(date_time, "%Y-%m-%d").date()
@@ -1553,10 +1566,34 @@ def create_response():
                         file.save(file_path)
                         responses[category]['image'] = file_path
 
+        # Retrieve the route plan and update the instruction status
+        route_plan = RoutePlan.query.filter_by(id=route_plan_id).first()
+        if not route_plan:
+            return jsonify({"message": "Route plan not found.", "status_code": 404, "successful": False}), 404
+
+        instructions = json.loads(route_plan.instructions)
+        instruction_found = False
+
+        for instruction in instructions:
+            if instruction['id'] == instruction_id:
+                instruction['status'] = 'submitted'
+                instruction_found = True
+                break
+
+        if not instruction_found:
+            return jsonify({"message": "Instruction not found.", "status_code": 404, "successful": False}), 404
+
+        # Persist the updated instructions
+        route_plan.instructions = json.dumps(instructions)
+        db.session.commit()
+
+
         # Create new Response object
         new_response = Response(
             merchandiser_id=merchandiser_id,
             manager_id=manager_id,
+            route_plan_id=route_plan_id,
+            instruction_id=instruction_id,
             response=responses,
             date_time=date_time,
             status=status
@@ -1571,6 +1608,21 @@ def create_response():
         return jsonify({"message": f"Failed to store response: {str(e)}", "status_code": 500, "successful": False}), 500
 
 
+@app.route("/users/delete/responses/<int:id>", methods=["DELETE"])
+@jwt_required()
+def delete_responses(id):
+    response = Response.query.filter_by(id=id).first()
+
+    if response:
+        try:
+            db.session.delete(response)
+            db.session.commit()
+            return jsonify({"message": "Response deleted successfully", "status_code": 204, "successful": True}), 204
+        except Exception as err:
+            db.session.rollback()
+            return jsonify({"message": f"Failed to delete response: {err}", "status_code": 500, "successful": False}), 500
+    else:
+        return jsonify({"message": "Response not found", "status_code": 404, "successful": False}), 404
 
 @app.route("/users/assign/merchandiser", methods=["POST"])
 @jwt_required()
