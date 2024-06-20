@@ -1527,7 +1527,6 @@ def create_response():
             merchandiser_id = int(merchandiser_id)
             manager_id = int(manager_id)
             route_plan_id = int(route_plan_id)
-            instruction_id = int(instruction_id)
         except ValueError:
             return jsonify({"message": "ID fields must be integers.", "status_code": 400, "successful": False}), 400
 
