@@ -1522,6 +1522,15 @@ def create_response():
         if status != "pending":
             return jsonify({"message": "Status must be 'pending'", "status_code": 400, "successful": False}), 400
 
+        # Convert IDs to integers
+        try:
+            merchandiser_id = int(merchandiser_id)
+            manager_id = int(manager_id)
+            route_plan_id = int(route_plan_id)
+            instruction_id = int(instruction_id)
+        except ValueError:
+            return jsonify({"message": "ID fields must be integers.", "status_code": 400, "successful": False}), 400
+
         # Parse date_time string into datetime object
         date_time = datetime.strptime(date_time, "%Y-%m-%d").date()
 
