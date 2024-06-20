@@ -1508,12 +1508,14 @@ def create_response():
         # Extract data from request
         merchandiser_id = request.form.get("merchandiser_id")
         manager_id = request.form.get("manager_id")
+        route_plan_id = request.form.get("route_plan_id")
+        instruction_id = request.form.get("instruction_id")
         date_time = request.form.get("date_time")
         status = request.form.get("status").lower()
         responses = {}
 
         # Validate required fields
-        if not all([merchandiser_id, manager_id, date_time, status]):
+        if not all([merchandiser_id, manager_id, route_plan_id, instruction_id, date_time, status]):
             return jsonify({"message": "Missing required fields.", "status_code": 400, "successful": False}), 400
 
         # Ensure status is 'pending'
@@ -1557,6 +1559,8 @@ def create_response():
         new_response = Response(
             merchandiser_id=merchandiser_id,
             manager_id=manager_id,
+            route_plan_id=route_plan_id,
+            instruction_id=instruction_id,
             response=responses,
             date_time=date_time,
             status=status
@@ -1571,6 +1575,22 @@ def create_response():
         return jsonify({"message": f"Failed to store response: {str(e)}", "status_code": 500, "successful": False}), 500
 
 
+
+@app.route("/users/delete/responses/<int:id>", methods=["DELETE"])
+@jwt_required()
+def delete_responses(id):
+    response = Response.query.filter_by(id=id).first()
+
+    if response:
+        try:
+            db.session.delete(response)
+            db.session.commit()
+            return jsonify({"message": "Response deleted successfully", "status_code": 204, "successful": True}), 204
+        except Exception as err:
+            db.session.rollback()
+            return jsonify({"message": f"Failed to delete response: {err}", "status_code": 500, "successful": False}), 500
+    else:
+        return jsonify({"message": "Response not found", "status_code": 404, "successful": False}), 404
 
 @app.route("/users/assign/merchandiser", methods=["POST"])
 @jwt_required()
