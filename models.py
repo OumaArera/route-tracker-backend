@@ -127,13 +127,11 @@ class MerchandiserPerformance(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     merchandiser_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
-    k_p_i_id = db.Column(db.Integer, ForeignKey("key_performance_indicators.id"), nullable=False)
     date_time = db.Column(db.DateTime, nullable=False)
     day = db.Column(db.String(50), nullable=False)
     performance = db.Column(JSON, nullable=False) 
 
     merchandiser = db.relationship('User', backref=db.backref('merchandiser_performances', lazy=True))
-    kpi = db.relationship('KeyPerformaceIndicator', backref=db.backref('merchandiser_performances', lazy=True))
 
 
 
