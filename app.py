@@ -639,37 +639,44 @@ def modify_route(id):
     route = RoutePlan.query.filter_by(id=id).first()
 
     if not route:
-        return jsonify({'message': 'Route plan does not exist',"successful": False,    "status_code": 404}), 404
+        return jsonify({'message': 'Route plan does not exist', "successful": False, "status_code": 404}), 404
 
     data = request.get_json()
     
-    if 'instructions' in data:
-        try:
-            new_instructions = data['instructions']
-            # Assuming the instructions are stored as a JSON string in the database
-            existing_instructions = json.loads(route.instructions)
+    # Ensure required fields are in the request data
+    if 'start' not in data or 'end' not in data or 'instruction_id' not in data:
+        return jsonify({'message': 'Missing required fields: start, end, instruction_id', "successful": False, "status_code": 400}), 400
 
-            for new_instr in new_instructions:
-                for existing_instr in existing_instructions:
-                    if existing_instr['id'] == new_instr['id']:
-                        existing_instr.update(new_instr)
-                        break
-
-            route.instructions = json.dumps(existing_instructions)
-        except Exception as err:
-            return jsonify({'message': f'Error processing instructions: {err}',"successful": False,"status_code": 400 }), 400
-
-    if 'status' in data:
-        route.status = data['status']
+    start = data['start']
+    end = data['end']
+    instruction_id = data['instruction_id']
 
     try:
+        # Parse the existing instructions JSON
+        existing_instructions = json.loads(route.instructions)
+
+        # Find the specific instruction by instruction_id and update start and end times
+        instruction_found = False
+        for instruction in existing_instructions:
+            if instruction['id'] == instruction_id:
+                instruction['start'] = start
+                instruction['end'] = end
+                instruction_found = True
+                break
+
+        if not instruction_found:
+            return jsonify({'message': 'Instruction ID not found', "successful": False, "status_code": 404}), 404
+
+        # Update the route plan's instructions with the modified instructions
+        route.instructions = json.dumps(existing_instructions)
+
+        # Commit the changes to the database
         db.session.commit()
-        return jsonify({'message': 'Route plan updated successfully', "successful": True,"status_code": 200}), 200
+        return jsonify({'message': 'Route plan updated successfully', "successful": True, "status_code": 200}), 200
 
     except Exception as err:
         db.session.rollback()
-        return jsonify({'message': f'Error committing to database: {err}',"successful": False, "status_code": 500 }), 500
-
+        return jsonify({'message': f'Error processing instructions: {err}', "successful": False, "status_code": 400}), 400
 
 @app.route("/users/merchandisers/routes/<int:id>", methods=["GET"])
 @jwt_required()
