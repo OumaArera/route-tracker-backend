@@ -8,7 +8,7 @@ from models import db
 from datetime import datetime, timezone, timedelta
 from flask_cors import CORS
 from dotenv import load_dotenv
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, cast, Date
 import smtplib
 from email.mime.text import MIMEText
 from sqlalchemy.orm.exc import NoResultFound
@@ -21,6 +21,7 @@ import calendar
 from sqlalchemy import extract
 from werkzeug.utils import secure_filename
 from flask import send_from_directory
+
 
 
 
@@ -1737,8 +1738,10 @@ def merchandiser_performance(merchandiser_id, new_scores):
     current_datetime = datetime.now()
     start_of_day = current_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
     
+    # Fetch the performance entry for today
     performance_entry = MerchandiserPerformance.query.filter_by(merchandiser_id=merchandiser_id, date_time=start_of_day).first()
     
+    # If no performance entry exists for today, create one
     if not performance_entry:
         performance_entry = MerchandiserPerformance(
             merchandiser_id=merchandiser_id,
@@ -1747,9 +1750,12 @@ def merchandiser_performance(merchandiser_id, new_scores):
             performance={}
         )
         db.session.add(performance_entry)
-        db.session.commit()  # Commit here to ensure the entry is created
+        db.session.commit()  
 
+    # Ensure current performance is a dictionary
     current_performance = performance_entry.performance or {}
+
+    # Update performance metrics
     for metric, new_score in new_scores.items():
         if metric in current_performance:
             current_value = current_performance[metric]
@@ -1758,14 +1764,8 @@ def merchandiser_performance(merchandiser_id, new_scores):
             updated_value = new_score
         
         current_performance[metric] = updated_value
-    
-    # Update the performance_entry with the new scores
-    performance_entry.performance = current_performance
-    db.session.commit()  # Commit to save the changes
-
-# Function to check if a text is grammatically correct
-def is_grammatically_correct(text):
-    return len(re.findall(r'\b(?:\w+\b\s+){10,}', text)) > 0  
+        performance_entry.performance = current_performance
+        db.session.commit()
 
 def compute_merch_scores(response):
     merchandiser_id = response['merchandiser_id']
@@ -1776,8 +1776,13 @@ def compute_merch_scores(response):
 
     performance_dict = {}
 
+    total_possible_score = 0
+    total_score = 0
+
     for kpi in kpis:
         kpi_metrics = kpi.performance_metric
+        kpi_total_score = 0
+        
         for metric, requirements in kpi_metrics.items():
             text_required = requirements.get('text', False)
             image_required = requirements.get('image', False)
@@ -1796,61 +1801,54 @@ def compute_merch_scores(response):
             if image_required and 'image' in metric_response and len(text) < 500:
                 image_score = 0.5 
 
-            total_score = min(text_score + image_score, 1)
-            performance_dict[metric] = total_score * 100  # Convert to percentage
+            total_score_metric = min(text_score + image_score, 1) * 100  # Convert to percentage
+            kpi_total_score += total_score_metric
 
-    total_response_length = sum(len(metric_response.get('text', "")) for metric_response in response['response'].values())
-    performance_dict['detailed'] = 100 if total_response_length > 1000 else 0
+            performance_dict[metric] = total_score_metric
+        
+        # Calculate the total possible score based on metrics considered
+        total_possible_score += len(kpi_metrics) * 100  # Each metric is potentially 100%
 
-    text_response = response['response'].get('text', "")
-    performance_dict['clarity'] = 100 if is_grammatically_correct(text_response) else 0
+        # Store the average score for this KPI
+        average_kpi_score = kpi_total_score / len(kpi_metrics)
+        total_score += average_kpi_score
+    
+    # Calculate performance metrics
+    performance_percentage = (total_score / len(kpis)) * 0.6  # 60% weight for performance metrics
 
-    current_date = datetime.now()
-    current_year = current_date.year
-    current_month = current_date.month
+    # Calculate completeness score
+    start_of_month = datetime(response_datetime.year, response_datetime.month, 1)
+    end_of_month = (start_of_month + timedelta(days=32)).replace(day=1) - timedelta(days=1)
 
-    route_plan = RoutePlan.query.filter_by(id=response['route_plan_id']).first()
+    route_plans = RoutePlan.query.filter(RoutePlan.merchandiser_id == merchandiser_id,
+                                         RoutePlan.date_range['start_date'].astext.cast(Date) >= start_of_month.date(),
+                                         RoutePlan.date_range['end_date'].astext.cast(Date) <= end_of_month.date()).all()
     completeness_percentage = 0
-    timely_score = 0
+    total_instructions = 0
+    completed_instructions = 0
 
-    if route_plan:
+    for route_plan in route_plans:
         try:
-            instructions = json.loads(route_plan.instructions)  # Parse JSON string into a list of dictionaries
+            instructions = json.loads(route_plan.instructions)
         except json.JSONDecodeError as e:
             print(f"Error decoding JSON instructions: {e}")
-            return
+            continue
 
-        date_range = route_plan.date_range
-        start_date = datetime.strptime(date_range['start_date'], '%Y-%m-%d')
-        
-        if start_date.year == current_year and start_date.month == current_month:
-            completed_instructions = 0
-            total_instructions = len(instructions)
-            
-            for instruction in instructions:
-                if instruction['status'] == 'complete':
-                    completed_instructions += 1
-                
-                instruction_start_date = datetime.strptime(instruction['start'], '%Y-%m-%dT%H:%M')
-                if response_datetime.date() == instruction_start_date.date():
-                    timely_score = 100  # Convert to percentage
+        total_instructions += len(instructions)
+        completed_instructions += sum(1 for instruction in instructions if instruction.get('status') == 'complete')
+    
+    if total_instructions > 0:
+        completeness_percentage = (completed_instructions / total_instructions) * 100
+    
+    completeness_score = completeness_percentage * 0.4  
 
-            completeness_percentage = (completed_instructions / total_instructions) * 100 if total_instructions else 0
-
-    reduced_completeness = completeness_percentage * 0.4
-
-    total_possible_score = (len(kpi_metrics) + 3) * 100  # +3 for detailed, clarity, and timely
-    total_score = sum(performance_dict.values()) + timely_score
-    performance_percentage = (total_score / total_possible_score) * 100
-
-    reduced_performance = performance_percentage * 0.6
-
-    total_performance = reduced_performance + reduced_completeness
+    # Calculate total performance
+    total_performance = performance_percentage + completeness_score
 
     performance_dict['completeness'] = completeness_percentage
     performance_dict['total_performance'] = total_performance
-    performance_dict['timely'] = timely_score
 
+    print(f"Computed performance scores: {performance_dict}")
     merchandiser_performance(merchandiser_id, performance_dict)
 
 
@@ -1934,7 +1932,6 @@ def approve_response():
             "status_code": 500,
             "successful": False
         }), 500
-
 
 @app.route("/users/get/day/performance/<int:merch_id>", methods=["GET"])
 @jwt_required()
