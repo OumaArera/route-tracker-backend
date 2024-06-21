@@ -1732,71 +1732,11 @@ def get_manager_merchandisers(manager_id):
 
     return jsonify({"message": assigned_merchandisers_list, "status_code": 200, "successful": True}), 200
 
-@app.route("/users/approve/response", methods=["PUT"])
-@jwt_required()
-def approve_response():
-    data = request.get_json()
-
-    if not data or 'response_id' not in data:
-        return jsonify({
-            "message": "Invalid data: response_id is required.",
-            "status_code": 400,
-            "successful": False
-        }), 400
-    
-    response_id = data.get("response_id")
-
-    response_to_rate = Response.query.filter_by(id=response_id).first()
-    if not response_to_rate:
-        return jsonify({
-            "message": "Response does not exist.",
-            "status_code": 404,
-            "successful": False
-        }), 404
-
-    kpi = KeyPerformaceIndicator.query.filter_by(id=response_to_rate.kpi_id).first()
-    if not kpi:
-        return jsonify({
-            "message": "Rating parameters have not been provided.",
-            "status_code": 404,
-            "successful": False
-        }), 404
-
-    response = {
-        "id": response_to_rate.id,
-        "merchandiser_id": response_to_rate.merchandiser_id,
-        "manager_id": response_to_rate.manager_id,
-        "response": response_to_rate.response,
-        "date_time": response_to_rate.date_time.strftime('%Y-%m-%dT%H:%M:%S'),
-        "status": response_to_rate.status,
-        "kpi_id": response_to_rate.kpi_id,
-        "route_plan_id": data.get("route_plan_id", None)  # Ensure this is passed from frontend
-    }
-    
-    response_to_rate.status = "Approved"
-
-    try:
-        db.session.commit()
-        compute_merch_scores(response)
-        return jsonify({
-            "message": "Response approved successfully.",
-            "status_code": 201,
-            "successful": True
-        }), 201
-    except SQLAlchemyError as err:
-        db.session.rollback()
-        return jsonify({
-            "message": f"Failed to approve the response: Error: {err}",
-            "status_code": 500,
-            "successful": False
-        }), 500
-
 
 def merchandiser_performance(merchandiser_id, new_scores):
     current_datetime = datetime.now()
     start_of_day = current_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
     
-    # Find or create the performance entry for today
     performance_entry = MerchandiserPerformance.query.filter_by(merchandiser_id=merchandiser_id, date_time=start_of_day).first()
     
     if not performance_entry:
@@ -1807,10 +1747,9 @@ def merchandiser_performance(merchandiser_id, new_scores):
             performance={}
         )
         db.session.add(performance_entry)
-        db.session.commit()
+        db.session.commit()  # Commit here to ensure the entry is created
 
-    # Update the performance metrics with the new scores
-    current_performance = performance_entry.performance
+    current_performance = performance_entry.performance or {}
     for metric, new_score in new_scores.items():
         if metric in current_performance:
             current_value = current_performance[metric]
@@ -1820,45 +1759,45 @@ def merchandiser_performance(merchandiser_id, new_scores):
         
         current_performance[metric] = updated_value
     
-    # Update the performance entry with the modified performance metrics
+    # Update the performance_entry with the new scores
     performance_entry.performance = current_performance
-    
-    # Commit the changes to the database
-    db.session.commit()
+    db.session.commit()  # Commit to save the changes
 
+# Function to check if a text is grammatically correct
 def is_grammatically_correct(text):
     return len(re.findall(r'\b(?:\w+\b\s+){10,}', text)) > 0  
 
 def compute_merch_scores(response):
     merchandiser_id = response['merchandiser_id']
-    kpi_id = response['kpi_id']
     response_datetime = datetime.strptime(response['date_time'], '%Y-%m-%dT%H:%M:%S')
 
-    kpi = KeyPerformaceIndicator.query.filter_by(id=kpi_id).first()
-    kpi_metrics = kpi.performance_metric
+    # Retrieve all KPIs from the database
+    kpis = KeyPerformaceIndicator.query.all()
 
     performance_dict = {}
 
-    for metric, requirements in kpi_metrics.items():
-        text_required = requirements.get('text', False)
-        image_required = requirements.get('image', False)
-        metric_response = response['response'].get(metric, {})
+    for kpi in kpis:
+        kpi_metrics = kpi.performance_metric
+        for metric, requirements in kpi_metrics.items():
+            text_required = requirements.get('text', False)
+            image_required = requirements.get('image', False)
+            metric_response = response['response'].get(metric, {})
 
-        text_score = 0
-        image_score = 0
+            text_score = 0
+            image_score = 0
 
-        if text_required:
-            text = metric_response.get('text', "")
-            if len(text) >= 500:
-                text_score = 1
-            elif len(text) > 200:
-                text_score = 0.5
+            if text_required:
+                text = metric_response.get('text', "")
+                if len(text) >= 500:
+                    text_score = 1
+                elif len(text) > 200:
+                    text_score = 0.5
 
-        if image_required and 'image' in metric_response and len(text) < 500:
-            image_score = 0.5 
+            if image_required and 'image' in metric_response and len(text) < 500:
+                image_score = 0.5 
 
-        total_score = min(text_score + image_score, 1)
-        performance_dict[metric] = total_score * 100  # Convert to percentage
+            total_score = min(text_score + image_score, 1)
+            performance_dict[metric] = total_score * 100  # Convert to percentage
 
     total_response_length = sum(len(metric_response.get('text', "")) for metric_response in response['response'].values())
     performance_dict['detailed'] = 100 if total_response_length > 1000 else 0
@@ -1875,18 +1814,24 @@ def compute_merch_scores(response):
     timely_score = 0
 
     if route_plan:
+        try:
+            instructions = json.loads(route_plan.instructions)  # Parse JSON string into a list of dictionaries
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON instructions: {e}")
+            return
+
         date_range = route_plan.date_range
         start_date = datetime.strptime(date_range['start_date'], '%Y-%m-%d')
         
         if start_date.year == current_year and start_date.month == current_month:
             completed_instructions = 0
-            total_instructions = len(route_plan.instructions)
+            total_instructions = len(instructions)
             
-            for instruction in route_plan.instructions:
+            for instruction in instructions:
                 if instruction['status'] == 'complete':
                     completed_instructions += 1
                 
-                instruction_start_date = datetime.strptime(instruction['date_range']['start_date'], '%Y-%m-%d')
+                instruction_start_date = datetime.strptime(instruction['start'], '%Y-%m-%dT%H:%M')
                 if response_datetime.date() == instruction_start_date.date():
                     timely_score = 100  # Convert to percentage
 
@@ -1909,6 +1854,87 @@ def compute_merch_scores(response):
     merchandiser_performance(merchandiser_id, performance_dict)
 
 
+@app.route("/users/approve/response", methods=["PUT"])
+@jwt_required()
+def approve_response():
+    data = request.get_json()
+
+    if not data or 'response_id' not in data or 'instruction_id' not in data or 'route_plan_id' not in data:
+        return jsonify({
+            "message": "Invalid data: response_id, instruction_id, and route_plan_id are required.",
+            "status_code": 400,
+            "successful": False
+        }), 400
+
+    response_id = data.get("response_id")
+    instruction_id = data.get("instruction_id")
+    route_plan_id = data.get("route_plan_id")
+
+    response_to_rate = Response.query.filter_by(id=response_id).first()
+    if not response_to_rate:
+        return jsonify({
+            "message": "Response does not exist.",
+            "status_code": 404,
+            "successful": False
+        }), 404
+
+    route_plan = RoutePlan.query.filter_by(id=route_plan_id).first()
+    if not route_plan:
+        return jsonify({
+            "message": "Route plan does not exist.",
+            "status_code": 404,
+            "successful": False
+        }), 404
+
+    # Parse and update the instruction status
+    instructions = json.loads(route_plan.instructions)  # Ensure instructions are parsed as a list of dictionaries
+    instruction_found = False
+
+    for instruction in instructions:
+        if instruction.get('id') == instruction_id:
+            instruction['status'] = 'complete'
+            instruction_found = True
+            break
+
+    if not instruction_found:
+        return jsonify({
+            "message": "Instruction does not exist.",
+            "status_code": 404,
+            "successful": False
+        }), 404
+
+    response = {
+        "id": response_to_rate.id,
+        "merchandiser_id": response_to_rate.merchandiser_id,
+        "manager_id": response_to_rate.manager_id,
+        "response": response_to_rate.response,
+        "date_time": response_to_rate.date_time.strftime('%Y-%m-%dT%H:%M:%S'),
+        "status": response_to_rate.status,
+        "route_plan_id": route_plan_id
+    }
+    
+    response_to_rate.status = "Approved"
+
+    try:
+        # Commit the updated instructions back to the route plan
+        route_plan.instructions = json.dumps(instructions)  # Ensure instructions are stored as a JSON string
+        db.session.commit()
+
+        compute_merch_scores(response)
+        
+        return jsonify({
+            "message": "Response approved successfully.",
+            "status_code": 201,
+            "successful": True
+        }), 201
+    except SQLAlchemyError as err:
+        db.session.rollback()
+        return jsonify({
+            "message": f"Failed to approve the response: Error: {err}",
+            "status_code": 500,
+            "successful": False
+        }), 500
+
 
 @app.route("/users/get/day/performance/<int:merch_id>", methods=["GET"])
 @jwt_required()
@@ -1927,7 +1953,6 @@ def get_day_performance(merch_id):
     if performance_entry:
         performance_data = {
             "merchandiser_id": performance_entry.merchandiser_id,
-            "k_p_i_id": performance_entry.k_p_i_id,
             "date_time": performance_entry.date_time.strftime('%Y-%m-%dT%H:%M:%S'),
             "day": performance_entry.day,
             "performance": performance_entry.performance
@@ -2148,6 +2173,26 @@ def change_pass():
         db.session.rollback()
         return jsonify({"message": f"Internal server error: {e}", "successful": False, "status_code": 500}), 500
 
+
+@app.route("/users/performances", methods=["GET"])
+@jwt_required()
+def get_performance():
+    performances = MerchandiserPerformance.query.all()
+
+    if not performances:
+        return jsonify({"message": "There is no performance", "successfull": False, "status_code": 404}), 404
+    
+    perormances_list=[]
+    for performance in performances:
+        perormances_list.append({
+            "id": performance.id,
+            "merchandiser_id": performance.merchandiser_id,
+            "date_time": performance.date_time,
+            "day": performance.day,
+            "performance": performance.performance
+        })
+
+    return jsonify({"message": perormances_list, "successfull": True, "status_code": 200}), 200
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5555, debug=True)
