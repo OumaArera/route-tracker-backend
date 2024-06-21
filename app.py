@@ -2082,6 +2082,140 @@ def get_yearly_performance(merch_id):
     else:
         return jsonify({"successful": False, "message": "No performance for this year", "status_code": 404}), 404
 
+
+@app.route("/users/get/performance", methods=["GET"])
+@jwt_required()
+def get_performance_by_date():
+    # Get the date from query parameters
+    date_str = request.args.get('date')
+    merch_id = request.args.get('merch_id')
+
+    if not date_str or not merch_id:
+        return jsonify({"successful": False, "message": "Date and merchandiser ID are required", "status_code": 400}), 400
+
+    try:
+        # Parse the date string into a datetime object
+        query_date = datetime.strptime(date_str, '%Y-%m-%d')
+    except ValueError:
+        return jsonify({"successful": False, "message": "Invalid date format. Use YYYY-MM-DD", "status_code": 400}), 400
+
+    # Calculate the start and end of the given date
+    start_of_day = query_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_of_day = query_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    # Query the performance data for the given merchandiser and date
+    performance_entry = MerchandiserPerformance.query.filter_by(merchandiser_id=merch_id)\
+                                                     .filter(MerchandiserPerformance.date_time >= start_of_day)\
+                                                     .filter(MerchandiserPerformance.date_time <= end_of_day)\
+                                                     .first()
+
+    if performance_entry:
+        performance_data = {
+            "merchandiser_id": performance_entry.merchandiser_id,
+            "date_time": performance_entry.date_time.strftime('%Y-%m-%dT%H:%M:%S'),
+            "day": performance_entry.day,
+            "performance": performance_entry.performance
+        }
+        return jsonify({"successful": True, "message": performance_data, "status_code": 200}), 200
+    else:
+        return jsonify({"successful": False, "message": "No performance data found for the given date", "status_code": 404}), 404
+
+
+@app.route("/users/get/monthly/performance", methods=["GET"])
+@jwt_required()
+def get_monthly_performance():
+    # Get the month and year from query parameters
+    month_str = request.args.get('month')
+    year_str = request.args.get('year')
+    merch_id = request.args.get('merch_id')
+
+    if not month_str or not year_str or not merch_id:
+        return jsonify({"successful": False, "message": "Month, year, and merchandiser ID are required", "status_code": 400}), 400
+
+    try:
+        # Parse the month and year into integers
+        month = int(month_str)
+        year = int(year_str)
+    except ValueError:
+        return jsonify({"successful": False, "message": "Invalid month or year format. Use MM and YYYY", "status_code": 400}), 400
+
+    # Calculate the start and end of the given month
+    start_of_month = datetime(year, month, 1, 0, 0, 0)
+    if month == 12:
+        end_of_month = datetime(year + 1, 1, 1, 0, 0, 0) - timedelta(seconds=1)
+    else:
+        end_of_month = datetime(year, month + 1, 1, 0, 0, 0) - timedelta(seconds=1)
+
+    # Query the performance data from the start to the end of the month
+    performance_entries = MerchandiserPerformance.query.filter_by(merchandiser_id=merch_id)\
+                                                       .filter(MerchandiserPerformance.date_time >= start_of_month)\
+                                                       .filter(MerchandiserPerformance.date_time <= end_of_month)\
+                                                       .all()
+
+    if not performance_entries:
+        return jsonify({"successful": False, "message": "No performance data found for the given month", "status_code": 404}), 404
+
+    # Initialize a dictionary to accumulate performance data
+    aggregated_performance = {}
+    total_days = len(performance_entries)
+
+    for entry in performance_entries:
+        for metric, value in entry.performance.items():
+            if metric not in aggregated_performance:
+                aggregated_performance[metric] = 0
+            aggregated_performance[metric] += value
+
+    # Calculate the average for each performance metric
+    averaged_performance = {metric: (total / total_days) for metric, total in aggregated_performance.items()}
+
+    return jsonify({"successful": True, "message": averaged_performance, "status_code": 200}), 200
+
+
+@app.route("/users/get/range/performance", methods=["GET"])
+@jwt_required()
+def get_range_performance():
+    # Get the start date, end date, and merchandiser ID from query parameters
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+    merch_id = request.args.get('merch_id')
+
+    if not start_date_str or not end_date_str or not merch_id:
+        return jsonify({"successful": False, "message": "Start date, end date, and merchandiser ID are required", "status_code": 400}), 400
+
+    try:
+        # Parse the start and end dates into datetime objects
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+        end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+        # Ensure the end date is inclusive by setting it to the end of the day
+        end_date = end_date.replace(hour=23, minute=59, second=59)
+    except ValueError:
+        return jsonify({"successful": False, "message": "Invalid date format. Use YYYY-MM-DD", "status_code": 400}), 400
+
+    # Query the performance data from the start date to the end date
+    performance_entries = MerchandiserPerformance.query.filter_by(merchandiser_id=merch_id)\
+                                                       .filter(MerchandiserPerformance.date_time >= start_date)\
+                                                       .filter(MerchandiserPerformance.date_time <= end_date)\
+                                                       .all()
+
+    if not performance_entries:
+        return jsonify({"successful": False, "message": "No performance data found for the given date range", "status_code": 404}), 404
+
+    # Initialize a dictionary to accumulate performance data
+    aggregated_performance = {}
+    total_days = len(performance_entries)
+
+    for entry in performance_entries:
+        for metric, value in entry.performance.items():
+            if metric not in aggregated_performance:
+                aggregated_performance[metric] = 0
+            aggregated_performance[metric] += value
+
+    # Calculate the average for each performance metric
+    averaged_performance = {metric: (total / total_days) for metric, total in aggregated_performance.items()}
+
+    return jsonify({"successful": True, "message": averaged_performance, "status_code": 200}), 200
+
+
 @app.route("/users/create/kpi", methods=["POST"])
 @jwt_required()
 def create_key_performance_indicators():
