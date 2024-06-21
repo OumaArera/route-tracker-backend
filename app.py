@@ -577,14 +577,18 @@ def send_email_to_merchandiser(data):
 @jwt_required()
 def get_manager_routes(id):
     current_date = datetime.now()
-    start_of_month = current_date.replace(day=1)
-    start_of_next_month = (start_of_month.replace(month=start_of_month.month % 12 + 1) if start_of_month.month != 12 else start_of_month.replace(year=start_of_month.year + 1, month=1))
+    start_of_month = current_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if start_of_month.month == 12:
+        start_of_next_month = start_of_month.replace(year=start_of_month.year + 1, month=1)
+    else:
+        start_of_next_month = start_of_month.replace(month=start_of_month.month + 1)
 
     routes = RoutePlan.query.filter_by(manager_id=id).all()
 
     routes_list = []
     for route in routes:
         start_date = datetime.strptime(route.date_range['start_date'], '%Y-%m-%d')
+        end_date = datetime.strptime(route.date_range['end_date'], '%Y-%m-%d')
 
         if start_of_month <= start_date < start_of_next_month:
             merchandiser = User.query.filter_by(id=route.merchandiser_id).first()
@@ -2348,6 +2352,35 @@ def get_performance():
         })
 
     return jsonify({"message": perormances_list, "successfull": True, "status_code": 200}), 200
+
+
+@app.route("/users/get/all/routes", methods=["GET"])
+@jwt_required()
+def get_all_routes():
+    # Query all route plans from the RoutePlan model
+    route_plans = RoutePlan.query.all()
+
+    if not route_plans:
+        return jsonify({"successful": False, "message": "No route plans found", "status_code": 404}), 404
+
+    # Format the route plans into the specified structure
+    formatted_route_plans = []
+    for plan in route_plans:
+        formatted_plan = {
+            "date_range": {
+                "start_date": plan.date_range['start_date'],
+                "end_date": plan.date_range['end_date']
+            },
+            "id": plan.id,
+            "instructions": plan.instructions,  # Return instructions JSON as is
+            "manager_id": plan.manager_id, # Assuming you have a relationship setup for merchandiser
+            "staff_no": plan.merchandiser.staff_no,       # Assuming you have a relationship setup for merchandiser
+            "status": plan.status
+        }
+        formatted_route_plans.append(formatted_plan)
+
+    return jsonify({"successful": True, "message": formatted_route_plans, "status_code": 200}), 200
+
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5555, debug=True)
