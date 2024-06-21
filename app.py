@@ -12,7 +12,7 @@ from sqlalchemy import func, and_
 import smtplib
 from email.mime.text import MIMEText
 from sqlalchemy.orm.exc import NoResultFound
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 import json
 import os
 import re
@@ -21,6 +21,7 @@ import calendar
 from sqlalchemy import extract
 from werkzeug.utils import secure_filename
 from flask import send_from_directory
+
 
 
 
@@ -1469,40 +1470,6 @@ def get_responses(manager_id):
         return jsonify({"message": f"Failed to retrieve responses: {str(e)}", "status_code": 500, "successful": False}), 500
 
 
-@app.route("/users/approve/response", methods=["PUT"])
-@jwt_required()
-def approve_response():
-    data = request.get_json()
-
-    if not data:
-        return jsonify({ "message": "Invalid data: You did not provide any data.", "status_code": 400, "successful": False}), 400
-    
-    response_id = data.get("response_id")
-
-    response_to_rate = Response.query.filter_by(id=response_id).first()
-    key_performance_indicators = KeyPerformaceIndicator.query.filter_by(id=response_to_rate.kpi_id).first()
-
-    if not key_performance_indicators:
-        return jsonify({ "message": "Rating parameters have not been provided.", "status_code": 404, "successful": False}), 404
-    
-    if not response_to_rate: 
-        return jsonify({ "message": "Response does not exist.", "status_code": 400, "successful": False}), 400
-
-    
-    response = {"id": response_to_rate.id, "merchandiser_id": response_to_rate.merchandiser_id, "manager_id": response_to_rate.manager_id, "response": response_to_rate.response, "date_time": response_to_rate.date_time, "status": response_to_rate.status, "kpi_id": response_to_rate.kpi_id}
-    
-    response_to_rate.status = "Approved"
-
-    try:
-        db.session.commit()
-        compute_merch_scores(response)
-        return jsonify({ "message": "Response approved successfully.", "status_code": 201, "successful": True}), 201
-
-    except Exception as err:
-        db.session.rollback()
-        return jsonify({"message": f"Failed to approve the response: Error: {err}", "status_code": 500, "successful": False}), 500
-
-
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -1765,38 +1732,86 @@ def get_manager_merchandisers(manager_id):
 
     return jsonify({"message": assigned_merchandisers_list, "status_code": 200, "successful": True}), 200
 
+@app.route("/users/approve/response", methods=["PUT"])
+@jwt_required()
+def approve_response():
+    data = request.get_json()
+
+    if not data or 'response_id' not in data:
+        return jsonify({
+            "message": "Invalid data: response_id is required.",
+            "status_code": 400,
+            "successful": False
+        }), 400
+    
+    response_id = data.get("response_id")
+
+    response_to_rate = Response.query.filter_by(id=response_id).first()
+    if not response_to_rate:
+        return jsonify({
+            "message": "Response does not exist.",
+            "status_code": 404,
+            "successful": False
+        }), 404
+
+    kpi = KeyPerformaceIndicator.query.filter_by(id=response_to_rate.kpi_id).first()
+    if not kpi:
+        return jsonify({
+            "message": "Rating parameters have not been provided.",
+            "status_code": 404,
+            "successful": False
+        }), 404
+
+    response = {
+        "id": response_to_rate.id,
+        "merchandiser_id": response_to_rate.merchandiser_id,
+        "manager_id": response_to_rate.manager_id,
+        "response": response_to_rate.response,
+        "date_time": response_to_rate.date_time.strftime('%Y-%m-%dT%H:%M:%S'),
+        "status": response_to_rate.status,
+        "kpi_id": response_to_rate.kpi_id,
+        "route_plan_id": data.get("route_plan_id", None)  # Ensure this is passed from frontend
+    }
+    
+    response_to_rate.status = "Approved"
+
+    try:
+        db.session.commit()
+        compute_merch_scores(response)
+        return jsonify({
+            "message": "Response approved successfully.",
+            "status_code": 201,
+            "successful": True
+        }), 201
+    except SQLAlchemyError as err:
+        db.session.rollback()
+        return jsonify({
+            "message": f"Failed to approve the response: Error: {err}",
+            "status_code": 500,
+            "successful": False
+        }), 500
+
 
 def merchandiser_performance(merchandiser_id, new_scores):
     current_datetime = datetime.now()
     start_of_day = current_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
     
-    # Find the last created performance entry for the given merchandiser_id
-    last_performance = MerchandiserPerformance.query.filter_by(merchandiser_id=merchandiser_id)\
-                                                     .order_by(MerchandiserPerformance.date_time.desc())\
-                                                     .first()
+    # Find or create the performance entry for today
+    performance_entry = MerchandiserPerformance.query.filter_by(merchandiser_id=merchandiser_id, date_time=start_of_day).first()
     
-    if not last_performance or last_performance.date_time < start_of_day:
-        # If no performance entry exists for today, or the last one is from a previous day,
-        # create a new entry for today
-        new_performance = MerchandiserPerformance(
+    if not performance_entry:
+        performance_entry = MerchandiserPerformance(
             merchandiser_id=merchandiser_id,
             date_time=start_of_day,
             day=start_of_day.strftime('%A'),
             performance={}
         )
-        db.session.add(new_performance)
+        db.session.add(performance_entry)
         db.session.commit()
-    
-    # Fetch the performance entry for the current day and merchandiser
-    performance_entry = MerchandiserPerformance.query.filter_by(merchandiser_id=merchandiser_id)\
-                                                      .filter_by(date_time=start_of_day)\
-                                                      .first()
-    
+
     # Update the performance metrics with the new scores
     current_performance = performance_entry.performance
     for metric, new_score in new_scores.items():
-        # Update the value of the metric by taking the current value, adding the new value,
-        # performing an average, and replacing the value with the result
         if metric in current_performance:
             current_value = current_performance[metric]
             updated_value = (current_value + new_score) / 2
@@ -1811,24 +1826,19 @@ def merchandiser_performance(merchandiser_id, new_scores):
     # Commit the changes to the database
     db.session.commit()
 
-
 def is_grammatically_correct(text):
     return len(re.findall(r'\b(?:\w+\b\s+){10,}', text)) > 0  
-
 
 def compute_merch_scores(response):
     merchandiser_id = response['merchandiser_id']
     kpi_id = response['kpi_id']
-    response_datetime = datetime.strptime(response['date_time'], '%Y-%m-%dT%H:%M:%S')  # Assuming ISO format for date_time
-    
-    # Fetch the relevant KPI
+    response_datetime = datetime.strptime(response['date_time'], '%Y-%m-%dT%H:%M:%S')
+
     kpi = KeyPerformaceIndicator.query.filter_by(id=kpi_id).first()
     kpi_metrics = kpi.performance_metric
-    
-    # Initialize the performance dictionary
+
     performance_dict = {}
 
-    # Calculate scores for each KPI metric
     for metric, requirements in kpi_metrics.items():
         text_required = requirements.get('text', False)
         image_required = requirements.get('image', False)
@@ -1841,7 +1851,7 @@ def compute_merch_scores(response):
             text = metric_response.get('text', "")
             if len(text) >= 500:
                 text_score = 1
-            elif len(text) > 100:
+            elif len(text) > 200:
                 text_score = 0.5
 
         if image_required and 'image' in metric_response and len(text) < 500:
@@ -1850,20 +1860,17 @@ def compute_merch_scores(response):
         total_score = min(text_score + image_score, 1)
         performance_dict[metric] = total_score * 100  # Convert to percentage
 
-    # Calculate the total response length score
-    total_response_length = len(response['response'].get('text', ""))
-    performance_dict['detailed'] = 100 if total_response_length > 500 else 0
+    total_response_length = sum(len(metric_response.get('text', "")) for metric_response in response['response'].values())
+    performance_dict['detailed'] = 100 if total_response_length > 1000 else 0
 
-    # Calculate the clarity score
     text_response = response['response'].get('text', "")
     performance_dict['clarity'] = 100 if is_grammatically_correct(text_response) else 0
 
-    # Calculate the completeness score based on the route plan for the current month
     current_date = datetime.now()
     current_year = current_date.year
     current_month = current_date.month
 
-    route_plan = RoutePlan.query.filter_by(merchandiser_id=merchandiser_id).first()
+    route_plan = RoutePlan.query.filter_by(id=response['route_plan_id']).first()
     completeness_percentage = 0
     timely_score = 0
 
@@ -1885,25 +1892,22 @@ def compute_merch_scores(response):
 
             completeness_percentage = (completed_instructions / total_instructions) * 100 if total_instructions else 0
 
-    # Reduce completeness by 40%
     reduced_completeness = completeness_percentage * 0.4
 
-    # Sum the individual scores and calculate the percentage
-    total_possible_score = (len(kpi_metrics) + 3) * 100  # +3 for detailed and clarity, and timely
+    total_possible_score = (len(kpi_metrics) + 3) * 100  # +3 for detailed, clarity, and timely
     total_score = sum(performance_dict.values()) + timely_score
     performance_percentage = (total_score / total_possible_score) * 100
 
-    # Reduce by 60%
     reduced_performance = performance_percentage * 0.6
 
-    # Calculate the total performance
     total_performance = reduced_performance + reduced_completeness
 
     performance_dict['completeness'] = completeness_percentage
     performance_dict['total_performance'] = total_performance
     performance_dict['timely'] = timely_score
 
-    return merchandiser_performance(merchandiser_id, performance_dict)
+    merchandiser_performance(merchandiser_id, performance_dict)
+
 
 
 @app.route("/users/get/day/performance/<int:merch_id>", methods=["GET"])
