@@ -1962,9 +1962,9 @@ def get_day_performance(merch_id):
 @app.route("/users/get/week/performance/<int:merch_id>", methods=["GET"])
 @jwt_required()
 def get_week_performance(merch_id):
-    # Calculate the start of the week (Sunday at midnight)
+    # Calculate the start of the week (Monday at midnight)
     current_datetime = datetime.now()
-    start_of_week = current_datetime - timedelta(days=current_datetime.weekday() + 1)
+    start_of_week = current_datetime - timedelta(days=current_datetime.weekday())
     start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # Query the performance data from the start of the week to now
@@ -1973,7 +1973,11 @@ def get_week_performance(merch_id):
                                                        .all()
 
     if not performance_entries:
-        return jsonify({"successful": False, "message": "No performance data found for the given week", "status_code": 404}), 404
+        return jsonify({
+            "successful": False,
+            "message": "No performance data found for the given week",
+            "status_code": 404
+        }), 404
 
     # Initialize a dictionary to accumulate performance data
     aggregated_performance = {}
@@ -1988,8 +1992,12 @@ def get_week_performance(merch_id):
     # Calculate the average for each performance metric
     averaged_performance = {metric: (total / total_days) for metric, total in aggregated_performance.items()}
 
+    return jsonify({
+        "successful": True,
+        "message": averaged_performance,
+        "status_code": 200
+    }), 200
 
-    return jsonify({"successful": True, "message": averaged_performance, "status_code": 200}), 200
 
 @app.route("/users/get/month/performance/<int:merch_id>", methods=["GET"])
 @jwt_required()
@@ -2004,11 +2012,15 @@ def get_month_performance(merch_id):
                                                        .all()
 
     if not performance_entries:
-        return jsonify({"successful": False, "message": "No performance data found for the given month", "status_code": 404}), 404
+        return jsonify({
+            "successful": False,
+            "message": "No performance data found for the given month",
+            "status_code": 404
+        }), 404
 
     # Initialize a dictionary to accumulate performance data
     aggregated_performance = {}
-    total_days = len(performance_entries)
+    total_entries = len(performance_entries)
 
     for entry in performance_entries:
         for metric, value in entry.performance.items():
@@ -2017,9 +2029,14 @@ def get_month_performance(merch_id):
             aggregated_performance[metric] += value
 
     # Calculate the average for each performance metric
-    averaged_performance = {metric: (total / total_days) for metric, total in aggregated_performance.items()}
+    averaged_performance = {metric: (total / total_entries) for metric, total in aggregated_performance.items()}
 
-    return jsonify({"successful": True, "message": averaged_performance, "status_code": 404}), 200
+    return jsonify({
+        "successful": True,
+        "message": averaged_performance,
+        "status_code": 200
+    }), 200
+
 
 @app.route("/users/get/year/performance/<int:merch_id>", methods=["GET"])
 @jwt_required()
@@ -2030,10 +2047,17 @@ def get_yearly_performance(merch_id):
     yearly_performance = {}
 
     # Loop through each month of the past year
-    for month_offset in range(1, 13):  # From 1 to 12 for each month
+    for month_offset in range(12):  # 12 months backward
+        # Calculate the month and year to look at
+        year = current_date.year if current_date.month > month_offset else current_date.year - 1
+        month = (current_date.month - month_offset - 1) % 12 + 1
+
         # Calculate the start and end dates for the current month
-        start_of_month = current_date.replace(day=1, month=current_date.month - month_offset)
-        end_of_month = start_of_month.replace(day=1, month=start_of_month.month + 1) - timedelta(days=1)
+        start_of_month = datetime(year, month, 1)
+        if month == 12:
+            end_of_month = datetime(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            end_of_month = datetime(year, month + 1, 1) - timedelta(days=1)
 
         # Query performance entries within the current month range
         performance_entries = MerchandiserPerformance.query.filter_by(merchandiser_id=merch_id)\
@@ -2045,18 +2069,18 @@ def get_yearly_performance(merch_id):
         total_performance_sum = sum(entry.performance['total_performance'] for entry in performance_entries)
         total_performance_avg = total_performance_sum / len(performance_entries) if performance_entries else 0
 
-        # Format the month and year for the dictionary key
-        month_key = start_of_month.strftime("%B, %Y")
+        # Only add to the dictionary if there is data
+        if performance_entries:
+            # Format the month and year for the dictionary key
+            month_key = start_of_month.strftime("%B, %Y")
 
-        # Add the monthly performance to the yearly dictionary
-        yearly_performance[month_key] = {'total_performance': total_performance_avg}
-    
+            # Add the monthly performance to the yearly dictionary
+            yearly_performance[month_key] = {'total_performance': total_performance_avg}
+
     if yearly_performance:
         return jsonify({"successful": True, "message": yearly_performance, "status_code": 200}), 200
-    
     else:
         return jsonify({"successful": False, "message": "No performance for this year", "status_code": 404}), 404
-
 
 @app.route("/users/create/kpi", methods=["POST"])
 @jwt_required()
