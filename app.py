@@ -2447,6 +2447,20 @@ def update_kpi(id):
         return jsonify({"successful": False, "message": f"Failed: Error: {err}", "status_code": 500}), 500
     
 
+@app.route("/users/delete/kpi/<int:id>", methods=["DELETE"])
+@jwt_required()
+def delete_kpi(id):
+    kpi = KeyPerformaceIndicator.query.get(id)
+    if not kpi:
+        return jsonify({"successful": False, "message": "No KPI found", "status_code": 404}), 404
+
+    try:
+        db.session.delete(kpi)
+        db.session.commit()
+        return jsonify({"successful": True, "message": "KPI deleted successfully", "status_code": 204}), 204
+    except Exception as err:
+        db.session.rollback()
+        return jsonify({"successful": False, "message": f"Failed: Error: {err}", "status_code": 500}), 500
 
 
 if __name__ == '__main__':
