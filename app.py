@@ -2389,6 +2389,41 @@ def get_all_routes():
     return jsonify({"successful": True, "message": formatted_route_plans, "status_code": 200}), 200
 
 
+@app.route("/users/all/kpis", methods=["GET"])
+@jwt_required()
+def get_all_kpis():
+    try:
+        # Query all KPIs
+        kpis = KeyPerformaceIndicator.query.all()
+        
+        # Format KPIs for response
+        formatted_kpis = []
+        for kpi in kpis:
+            formatted_kpi = {
+                "id": kpi.id,
+                "sector_name": kpi.sector_name,
+                "company_name": kpi.company_name,
+                "admin_id": kpi.admin_id,
+                "performance_metric": kpi.performance_metric
+            }
+            formatted_kpis.append(formatted_kpi)
+        
+        # Return JSON response
+        return jsonify({
+            "successful": True,
+            "message": formatted_kpis,
+            "status_code": 200
+        }), 200
+    
+    except Exception as e:
+        # Handle exceptions, log errors if needed
+        return jsonify({
+            "successful": False,
+            "message": "Failed to fetch KPIs",
+            "error": str(e),
+            "status_code": 500
+        }), 500
+
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5555, debug=True)
 
