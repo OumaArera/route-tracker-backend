@@ -2424,6 +2424,45 @@ def get_all_kpis():
             "status_code": 500
         }), 500
 
+
+@app.route("/users/update/kpi/<int:id>", methods=["PUT"])
+@jwt_required()
+def update_kpi(id):
+    new_performance_metric = request.json.get('performance_metric', None)
+
+    kpi = KeyPerformaceIndicator.query.get(id)
+    if not kpi:
+        return jsonify({"successful": False, "message": "No KPI found", "status_code": 404}), 404
+
+    if not isinstance(new_performance_metric, dict):
+        return jsonify({"successful": False, "message": "Invalid data format", "status_code": 400}), 400
+
+    kpi.performance_metric = new_performance_metric
+
+    try:
+        db.session.commit()
+        return jsonify({"successful": True, "message": "KPI updated successfully", "status_code": 201}), 201
+    except Exception as err:
+        db.session.rollback()
+        return jsonify({"successful": False, "message": f"Failed: Error: {err}", "status_code": 500}), 500
+    
+
+@app.route("/users/delete/kpi/<int:id>", methods=["DELETE"])
+@jwt_required()
+def delete_kpi(id):
+    kpi = KeyPerformaceIndicator.query.get(id)
+    if not kpi:
+        return jsonify({"successful": False, "message": "No KPI found", "status_code": 404}), 404
+
+    try:
+        db.session.delete(kpi)
+        db.session.commit()
+        return jsonify({"successful": True, "message": "KPI deleted successfully", "status_code": 204}), 204
+    except Exception as err:
+        db.session.rollback()
+        return jsonify({"successful": False, "message": f"Failed: Error: {err}", "status_code": 500}), 500
+
+
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5555, debug=True)
 
