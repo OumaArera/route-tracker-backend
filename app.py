@@ -1567,8 +1567,7 @@ def reject_response(id):
     merchandiser_id = data.get("merchandiser_id")
     message = data.get("message")
 
-
-    if not all([route_plan_id, instruction_id]):
+    if not all([route_plan_id, instruction_id, manager_id, merchandiser_id]):
         return jsonify({"message": "Missing required fields", "successful": False, "status_code": 400}), 400
     
     try:
@@ -1612,7 +1611,7 @@ def reject_response(id):
         db.session.add(new_notification)
         db.session.commit()
 
-        return jsonify({"message": "Response rejected and notifiation sent successfully.", "successful": True, "status_code": 200}), 200
+        return jsonify({"message": "Response rejected and notification sent successfully.", "successful": True, "status_code": 200}), 200
 
     except Exception as e:
         db.session.rollback()  
