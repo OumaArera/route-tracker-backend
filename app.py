@@ -8,7 +8,7 @@ from models import db
 from datetime import datetime, timezone, timedelta
 from flask_cors import CORS
 from dotenv import load_dotenv
-from sqlalchemy import func, and_, cast, Date
+from sqlalchemy import func, and_, Date, or_, extract
 import smtplib
 from email.mime.text import MIMEText
 from sqlalchemy.orm.exc import NoResultFound
@@ -17,8 +17,6 @@ import json
 import os
 import re
 from sqlalchemy.orm import joinedload
-import calendar
-from sqlalchemy import extract
 from werkzeug.utils import secure_filename
 from flask import send_from_directory
 
@@ -28,7 +26,7 @@ from flask import send_from_directory
 
 
 
-from models import User,  RoutePlan, Location, Notification, ActivityLog, Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance, Message
+from models import User,  RoutePlan, Location, Notification, ActivityLog, Reply,  Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance, Message
 
 load_dotenv()
 
@@ -462,51 +460,13 @@ def send_notification():
     try:
         db.session.add(notification)
         db.session.commit()
-        send_manager_email(data, manager, merchandiser)
+        
         return jsonify({"message": "Notification sent successfully", "successful": True, "status_code": 201}), 201
 
     except Exception as err:
         db.session.rollback()
         return jsonify({"message": f"Error: {err}", "successful": False, "status_code": 500}), 500
     
-def send_manager_email(data, manager, merchandiser):
-
-    content = data.get("content")
-    facility = data.get("facility")
-    timestamp = data.get("timestamp")
-    status = data.get("status")
-    manager_name = f"{manager.first_name} {manager.last_name}"
-
-
-    subject = f'Merchandiser Report of {facility}'
-
-    body = f"\nGreetings {manager_name}, I trust this mail finds you well.\n\n"
-
-    body += f"On today's field work at {facility} at {timestamp}, I have this to report.\n\n"
-    body += f"{content}\n\n"
-
-    body += f"Status: {status}\n\n"
-    body += "Thanks for your continued support.\n\n"
-
-    body += f"Kind regards,\n\n"
-    body += f"{merchandiser.first_name} {merchandiser.last_name}, \n"
-    body += f"Merchandiser,\n"
-    body += f"Merch Mate Group\n\n"
-
-    msg = MIMEText(body)
-    msg['Subject'] = subject
-    msg['From'] = f"{merchandiser.first_name}{merchandiser.last_name}@trial-351ndgwynjrlzqx8.mlsender.net"
-    msg['To'] = manager.email
-
-    smtp_server = app.config['SMTP_SERVER_ADDRESS']
-    smtp_port = app.config['SMTP_PORT']
-    username = app.config['SMTP_USERNAME']
-    password = app.config['SMTP_PASSWORD']
-
-    with smtplib.SMTP(smtp_server, smtp_port) as server:
-        server.starttls()
-        server.login(username, password)
-        server.sendmail(username, manager.email, msg.as_string())
 
 @app.route("/users/route-plans/<int:merchandiser_id>", methods=["GET"])
 @jwt_required()
@@ -522,8 +482,6 @@ def get_merchandiser_route_plans(merchandiser_id):
     for route in route_plans:
         route_plans_list.append({'merchandiser_id': route.merchandiser_id, 'manager_id': route.manager_id, 'date_range': route.date_range, 'instructions': route.instructions, 'status': route.status, "id": route.id})
     return jsonify({'message': route_plans_list,"successful": True,"status_code": 200}), 200
-
-
 
 
 @app.route("/users/manager-routes/<int:id>", methods=["GET"])
@@ -2555,27 +2513,75 @@ def edit_notification_status(notification_id):
         return jsonify({"message": f"Failed to update notification status: {error_message}", "status_code": 500, "successful": False}), 500
 
 
-@app.route("/users/notifications/unread/<int:merchandiser_id>", methods=["GET"])
+@app.route("/users/reply/to/notification", methods=["POST"])
 @jwt_required()
-def get_unread_notifications(merchandiser_id):
+def reply_to_notification():
+    data = request.get_json()
+
+    
+    message_id = data.get("message_id")
+    reply_text = data.get("reply")
+
+    if not all([message_id, reply]):
+        return jsonify({"message": "Missing required fields", "status_code": 400, "successful": False}), 400
+
+    message = Message.query.filter_by(id=message_id).first()
+    if not message:
+        return jsonify({"message": "Message not found", "status_code": 404, "successful": False}), 404
+
+    reply = Reply(
+        manager_id=message.manager_id,
+        merchandiser_id=message.merchandiser_id,
+        message_id=message_id,
+        reply=reply_text,
+        status="unread"  
+    )
+
     try:
-        notifications = Message.query.filter_by(merchandiser_id=merchandiser_id, status='unread').all()
+        db.session.add(reply)
+        db.session.commit()
+        return jsonify({"message": "Reply posted successfully", "status_code": 201, "successful": True}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": str(e), "status_code": 500, "successful": False}), 500
+
+
+@app.route("/users/notifications/unread/<int:id>", methods=["GET"])
+@jwt_required()
+def get_unread_notifications(id):
+    try:
+        notifications = Message.query.filter(
+            or_(Message.merchandiser_id == id, Message.manager_id == id),
+            Message.status == 'unread'
+        ).all()
 
         if not notifications:
             return jsonify({"message": "No unread notifications found", "status_code": 404, "successful": False}), 404
 
         unread_notifications = []
         for notification in notifications:
+            replies = Reply.query.filter_by(message_id=notification.id).all()
+            reply_list = [{
+                "id": reply.id,
+                "manager_id": reply.manager_id,
+                "merchandiser_id": reply.merchandiser_id,
+                "reply": reply.reply,
+                "status": reply.status
+            } for reply in replies]
+
             unread_notifications.append({
                 "id": notification.id,
                 "manager_id": notification.manager_id,
                 "message": notification.message,
-                "status": notification.status
+                "status": notification.status,
+                "replies": reply_list
             })
         return jsonify({"message": unread_notifications, "status_code": 200, "successful": True}), 200
     except SQLAlchemyError as e:
         error_message = str(e.__dict__.get('orig') or e)
         return jsonify({"message": f"Failed to fetch notifications: {error_message}", "status_code": 500, "successful": False}), 500
+
+
 
 
 if __name__ == '__main__':
