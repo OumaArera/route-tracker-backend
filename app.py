@@ -28,7 +28,7 @@ from flask import send_from_directory
 
 
 
-from models import User,  RoutePlan, Location, Notification, ActivityLog, Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance
+from models import User,  RoutePlan, Location, Notification, ActivityLog, Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance, Message
 
 load_dotenv()
 
@@ -1610,6 +1610,10 @@ def reject_response(id):
     data = request.get_json()
     route_plan_id = data.get("route_plan_id")
     instruction_id = data.get("instruction_id")
+    manager_id = data.get("manager_id")
+    merchandiser_id = data.get("merchandiser_id")
+    message = data.get("message")
+
 
     if not all([route_plan_id, instruction_id]):
         return jsonify({"message": "Missing required fields", "successful": False, "status_code": 400}), 400
@@ -1642,12 +1646,24 @@ def reject_response(id):
         response.status = "rejected"
         db.session.commit()
 
-        return jsonify({"message": "Response rejected and instructions updated successfully.", "successful": True, "status_code": 200}), 200
+        if not isinstance(message, str):
+            return jsonify({"message": "Message must be a string", "successful": False, "status_code": 400}), 400
+        
+        new_notification = Message(
+            manager_id=manager_id,
+            merchandiser_id=merchandiser_id,
+            message=message,
+            status='unread'  
+        )
+
+        db.session.add(new_notification)
+        db.session.commit()
+
+        return jsonify({"message": "Response rejected and notifiation sent successfully.", "successful": True, "status_code": 200}), 200
 
     except Exception as e:
-        db.session.rollback()  # Rollback in case of error
+        db.session.rollback()  
         return jsonify({"message": f"An error occurred: {str(e)}", "successful": False, "status_code": 500}), 500
-
 
 
 @app.route("/users/assign/merchandiser", methods=["POST"])
@@ -2550,10 +2566,64 @@ def get_leaderboard_performance():
         }), 500
 
 
-@app.route("/users/complete/route/plan/<int:id>", methods=["POST"])
+@app.route("/users/complete/route/plan/<int:id>", methods=["PUT"])
 @jwt_required()
-def complete_route_plan():
-    pass
+def complete_route_plan(id):
+    try:
+        route_plan = RoutePlan.query.get(id)
+
+        if not route_plan:
+            return jsonify({"message": "Route plan not found.", "status_code": 404, "successful": False}), 404
+
+        route_plan.status = "complete"
+        db.session.commit()
+
+        return jsonify({"message": f"Route plan {id} marked as complete successfully.", "status_code": 201, "successful": True}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": f"Failed to mark route plan {id} as complete. Error: {str(e)}", "status_code": 500, "successful": False}), 500
+
+@app.route("/users/notifications/edit-status/<int:notification_id>", methods=["PUT"])
+@jwt_required()
+def edit_notification_status(notification_id):
+    try:
+        notification = Message.query.get(notification_id)
+        if not notification:
+            return jsonify({"message": "Notification not found", "status_code": 404, "successful": False}), 404
+
+        notification.status = "read"
+        db.session.commit()
+        return jsonify({"message": "Notification status updated successfully", "status_code": 201, "successful": True}), 201
+    
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        error_message = str(e.__dict__.get('orig') or e)
+        return jsonify({"message": f"Failed to update notification status: {error_message}", "status_code": 500, "successful": False}), 500
+
+
+@app.route("/users/notifications/unread/<int:merchandiser_id>", methods=["GET"])
+@jwt_required()
+def get_unread_notifications(merchandiser_id):
+    try:
+        notifications = Message.query.filter_by(merchandiser_id=merchandiser_id, status='unread').all()
+
+        if not notifications:
+            return jsonify({"message": "No unread notifications found", "status_code": 404, "successful": False}), 404
+
+        unread_notifications = []
+        for notification in notifications:
+            unread_notifications.append({
+                "id": notification.id,
+                "manager_id": notification.manager_id,
+                "message": notification.message,
+                "status": notification.status
+            })
+        return jsonify({"message": unread_notifications, "status_code": 200, "successful": True}), 200
+    except SQLAlchemyError as e:
+        error_message = str(e.__dict__.get('orig') or e)
+        return jsonify({"message": f"Failed to fetch notifications: {error_message}", "status_code": 500, "successful": False}), 500
+
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5555, debug=True)
