@@ -1409,6 +1409,7 @@ def get_responses(manager_id):
         for response in responses:
             formatted_response = {
                 "id": response.id,
+                "merchandiser_id": response.merchandiser_id,
                 "merchandiser": f"{response.merchandiser.first_name} {response.merchandiser.last_name}",
                 "manager_id": response.manager_id,
                 "route_plan_id": response.route_plan_id,
