@@ -28,7 +28,7 @@ from flask import send_from_directory
 
 
 
-from models import User,  RoutePlan, Location, Notification, ActivityLog, Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance
+from models import User,  RoutePlan, Location, Notification, ActivityLog, Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance, Message
 
 load_dotenv()
 
@@ -524,53 +524,6 @@ def get_merchandiser_route_plans(merchandiser_id):
     return jsonify({'message': route_plans_list,"successful": True,"status_code": 200}), 200
 
 
-def send_email_to_merchandiser(data):
-
-    staff_no = data.get('staff_no')
-    manager_id = data.get('manager_id')
-    date_range = data.get('date_range')
-    instructions = data.get('instructions')
-    status = data.get('status')
-
-    manager = User.query.filter_by(id=manager_id).first()
-    merchandiser = User.query.filter_by(staff_no=staff_no).first()
-
-    if not manager:
-        return  jsonify({"message": "Invalid manager","successful": False,"status_code": 400}), 400
-
-    subject = 'Route Plans'
-
-    body = f"\nGreetings {merchandiser.first_name} {merchandiser.last_name}, I trust this mail finds you well.\n\n"
-
-    body += "Please find below the details of the route plans assigned to you:\n\n"
-    body += f"Date range from: {date_range['start_date']} to {date_range['end_date']}\n\n"
-
-    for instruction in instructions:
-        body += f"Start date: {instruction['start']} - End Date: {instruction['end']} -  {instruction['facility']} - {instruction['instructions']}\n\n"
-
-    body += f"Status: {status}\n\n"
-    body += "Kindly make sure to send a report of your daily activities. The report should address instructions.\n\n"
-
-    body += f"Warm regards,\n\n"
-    body += f"{manager.first_name}, \n"
-    body += f"Sales Manager,\n"
-    body += f"Merch Mate Group\n\n"
-
-    msg = MIMEText(body)
-    msg['Subject'] = subject
-    msg['From'] = f"{manager.first_name}{manager.last_name}@trial-351ndgwynjrlzqx8.mlsender.net"
-    msg['To'] = merchandiser.email
-
-    
-    smtp_server = app.config['SMTP_SERVER_ADDRESS']
-    smtp_port = app.config['SMTP_PORT']
-    username = app.config['SMTP_USERNAME']
-    password = app.config['SMTP_PASSWORD']
-
-    with smtplib.SMTP(smtp_server, smtp_port) as server:
-        server.starttls()
-        server.login(username, password)
-        server.sendmail(username, merchandiser.email, msg.as_string())
 
 
 @app.route("/users/manager-routes/<int:id>", methods=["GET"])
@@ -681,7 +634,6 @@ def modify_route(id):
 @app.route("/users/merchandisers/routes/<int:id>", methods=["GET"])
 @jwt_required()
 def get_merchandiser_routes(id):
-    # Fetch all route plans for the given merchandiser
     routes = RoutePlan.query.filter_by(merchandiser_id=id).all()
 
     if not routes:
@@ -690,7 +642,8 @@ def get_merchandiser_routes(id):
     # Current month date range
     current_date = datetime.now(timezone.utc)
     first_day_of_month = current_date.replace(day=1)
-    last_day_of_month = (first_day_of_month + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    next_month = first_day_of_month + timedelta(days=32)
+    last_day_of_month = next_month.replace(day=1) - timedelta(days=1)
 
     filtered_routes = []
     
@@ -698,18 +651,21 @@ def get_merchandiser_routes(id):
         start_date_dt = datetime.fromisoformat(route.date_range['start_date']).replace(tzinfo=timezone.utc)
         end_date_dt = datetime.fromisoformat(route.date_range['end_date']).replace(tzinfo=timezone.utc)
         
-        if not (first_day_of_month <= start_date_dt <= last_day_of_month) or not (first_day_of_month <= end_date_dt <= last_day_of_month):
+        # Check if route's date range overlaps with the current month
+        if not (first_day_of_month <= end_date_dt and start_date_dt <= last_day_of_month):
             continue
         
         manager = User.query.get(route.manager_id)
-        manager_name = f"{manager.first_name} {manager.last_name}"
-        
+        manager_name = f"{manager.first_name} {manager.last_name}" if manager else "Unknown"
+
         instructions = json.loads(route.instructions)
         for instruction in instructions:
             facility_id = instruction.get('facility')
             facility = Facility.query.get(facility_id)
             if facility:
                 instruction['facility_name'] = facility.name
+            else:
+                instruction['facility_name'] = "Unknown"
 
         filtered_routes.append({
             'id': route.id,
@@ -722,7 +678,6 @@ def get_merchandiser_routes(id):
         })
 
     return jsonify({"successful": True, "status_code": 200, 'message': filtered_routes}), 200
-
 
 @app.route('/users/route-plans', methods=['GET', 'POST'])
 @jwt_required()
@@ -795,8 +750,7 @@ def route_plan_details():
 
         start_date_dt = datetime.fromisoformat(start_date).date()
         end_date_dt = datetime.fromisoformat(end_date).date()
-        print(f"First day of the month: {first_day_of_month}. Start date: {start_date_dt}. Last day of the month: {last_day_of_month}")
-        print(f"First day of the month: {first_day_of_month}. End date: {end_date_dt}. Last day of the month: {last_day_of_month}")
+        
         if not (first_day_of_month <= start_date_dt <= last_day_of_month) or not (first_day_of_month <= end_date_dt <= last_day_of_month):
             return jsonify({'message': 'Assignments can only be made for the current month', "successful": False, "status_code": 400}), 400
 
@@ -827,9 +781,7 @@ def route_plan_details():
         try:
             db.session.add(new_route_plan)
             db.session.commit()
-            send_email_to_merchandiser(data)
             user_id = get_jwt_identity()
-            log_activity('Created merchandiser routes', user_id)
             return jsonify({'message': 'Route plan created successfully', "successful": True, "status_code": 201}), 201
 
         except Exception as err:
@@ -1388,6 +1340,7 @@ def get_facilities(manager_id):
         })
     return jsonify({"message": facilities_data, "successful": True, "status_code": 200 }), 200
 
+
 @app.route("/users/get/facilities", methods=["GET"])
 @jwt_required()
 def get_all_facilities():
@@ -1456,6 +1409,7 @@ def get_responses(manager_id):
         for response in responses:
             formatted_response = {
                 "id": response.id,
+                "merchandiser_id": response.merchandiser_id,
                 "merchandiser": f"{response.merchandiser.first_name} {response.merchandiser.last_name}",
                 "manager_id": response.manager_id,
                 "route_plan_id": response.route_plan_id,
@@ -1610,8 +1564,11 @@ def reject_response(id):
     data = request.get_json()
     route_plan_id = data.get("route_plan_id")
     instruction_id = data.get("instruction_id")
+    manager_id = data.get("manager_id")
+    merchandiser_id = data.get("merchandiser_id")
+    message = data.get("message")
 
-    if not all([route_plan_id, instruction_id]):
+    if not all([route_plan_id, instruction_id, manager_id, merchandiser_id]):
         return jsonify({"message": "Missing required fields", "successful": False, "status_code": 400}), 400
     
     try:
@@ -1642,12 +1599,24 @@ def reject_response(id):
         response.status = "rejected"
         db.session.commit()
 
-        return jsonify({"message": "Response rejected and instructions updated successfully.", "successful": True, "status_code": 200}), 200
+        if not isinstance(message, str):
+            return jsonify({"message": "Message must be a string", "successful": False, "status_code": 400}), 400
+        
+        new_notification = Message(
+            manager_id=manager_id,
+            merchandiser_id=merchandiser_id,
+            message=message,
+            status='unread'  
+        )
+
+        db.session.add(new_notification)
+        db.session.commit()
+
+        return jsonify({"message": "Response rejected and notification sent successfully.", "successful": True, "status_code": 200}), 200
 
     except Exception as e:
-        db.session.rollback()  # Rollback in case of error
+        db.session.rollback()  
         return jsonify({"message": f"An error occurred: {str(e)}", "successful": False, "status_code": 500}), 500
-
 
 
 @app.route("/users/assign/merchandiser", methods=["POST"])
@@ -1787,13 +1756,11 @@ def compute_merch_scores(response):
 
     performance_dict = {}
 
-    total_possible_score = 0
-    total_score = 0
+    total_scores = []
 
     for kpi in kpis:
         kpi_metrics = kpi.performance_metric
-        kpi_total_score = 0
-        
+
         for metric, requirements in kpi_metrics.items():
             text_required = requirements.get('text', False)
             image_required = requirements.get('image', False)
@@ -1813,19 +1780,32 @@ def compute_merch_scores(response):
                 image_score = 0.5 
 
             total_score_metric = min(text_score + image_score, 1) * 100  # Convert to percentage
-            kpi_total_score += total_score_metric
-
+            total_scores.append(total_score_metric)
             performance_dict[metric] = total_score_metric
-        
-        # Calculate the total possible score based on metrics considered
-        total_possible_score += len(kpi_metrics) * 100  # Each metric is potentially 100%
 
-        # Store the average score for this KPI
-        average_kpi_score = kpi_total_score / len(kpi_metrics)
-        total_score += average_kpi_score
-    
-    # Calculate performance metrics
-    performance_percentage = (total_score / len(kpis)) * 0.6  # 60% weight for performance metrics
+    # Calculate timeliness score
+    route_plan_id = response['route_plan_id']
+    route_plan = RoutePlan.query.filter_by(id=route_plan_id).first()
+    timeliness_percentage = 0
+
+    if route_plan:
+        try:
+            instructions = json.loads(route_plan.instructions)
+            for instruction in instructions:
+                if instruction.get('id') == response['instruction_id']:
+                    instruction_start = datetime.strptime(instruction.get('start'), '%Y-%m-%dT%H:%M:%S')
+                    if response_datetime.date() == instruction_start.date():
+                        timeliness_percentage = 100
+                    break
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON instructions: {e}")
+
+    total_scores.append(timeliness_percentage)
+    performance_dict['timeliness'] = timeliness_percentage
+
+    # Calculate the average score of metrics and timeliness
+    average_performance_score = sum(total_scores) / len(total_scores)
+    weighted_performance_score = average_performance_score * 0.6
 
     # Calculate completeness score
     start_of_month = datetime(response_datetime.year, response_datetime.month, 1)
@@ -1834,34 +1814,31 @@ def compute_merch_scores(response):
     route_plans = RoutePlan.query.filter(RoutePlan.merchandiser_id == merchandiser_id,
                                          RoutePlan.date_range['start_date'].astext.cast(Date) >= start_of_month.date(),
                                          RoutePlan.date_range['end_date'].astext.cast(Date) <= end_of_month.date()).all()
-    completeness_percentage = 0
     total_instructions = 0
     completed_instructions = 0
 
     for route_plan in route_plans:
         try:
             instructions = json.loads(route_plan.instructions)
+            for instruction in instructions:
+                total_instructions += 1
+                if instruction.get('status').lower() == 'complete':
+                    completed_instructions += 1
         except json.JSONDecodeError as e:
             print(f"Error decoding JSON instructions: {e}")
-            continue
 
-        total_instructions += len(instructions)
-        completed_instructions += sum(1 for instruction in instructions if instruction.get('status') == 'complete')
-    
+    completeness_percentage = 0
     if total_instructions > 0:
         completeness_percentage = (completed_instructions / total_instructions) * 100
-    
-    completeness_score = completeness_percentage * 0.4  
+
+    weighted_completeness_score = completeness_percentage * 0.4
+    performance_dict['completeness'] = completeness_percentage
 
     # Calculate total performance
-    total_performance = performance_percentage + completeness_score
-
-    performance_dict['completeness'] = completeness_percentage
+    total_performance = weighted_performance_score + weighted_completeness_score
     performance_dict['total_performance'] = total_performance
 
-    print(f"Computed performance scores: {performance_dict}")
     merchandiser_performance(merchandiser_id, performance_dict)
-
 
 @app.route("/users/approve/response", methods=["PUT"])
 @jwt_required()
@@ -1919,7 +1896,8 @@ def approve_response():
         "response": response_to_rate.response,
         "date_time": response_to_rate.date_time.strftime('%Y-%m-%dT%H:%M:%S'),
         "status": response_to_rate.status,
-        "route_plan_id": route_plan_id
+        "route_plan_id": route_plan_id,
+        "instruction_id": instruction_id
     }
     
     response_to_rate.status = "Approved"
@@ -1943,6 +1921,7 @@ def approve_response():
             "status_code": 500,
             "successful": False
         }), 500
+
 
 @app.route("/users/get/day/performance/<int:merch_id>", methods=["GET"])
 @jwt_required()
@@ -1990,18 +1969,20 @@ def get_week_performance(merch_id):
             "status_code": 404
         }), 404
 
-    # Initialize a dictionary to accumulate performance data
+    # Initialize dictionaries to accumulate performance data and counts
     aggregated_performance = {}
-    total_days = len(performance_entries)
+    metric_counts = {}
 
     for entry in performance_entries:
         for metric, value in entry.performance.items():
             if metric not in aggregated_performance:
                 aggregated_performance[metric] = 0
+                metric_counts[metric] = 0
             aggregated_performance[metric] += value
+            metric_counts[metric] += 1
 
     # Calculate the average for each performance metric
-    averaged_performance = {metric: (total / total_days) for metric, total in aggregated_performance.items()}
+    averaged_performance = {metric: (total / metric_counts[metric]) for metric, total in aggregated_performance.items()}
 
     return jsonify({
         "successful": True,
@@ -2029,18 +2010,20 @@ def get_month_performance(merch_id):
             "status_code": 404
         }), 404
 
-    # Initialize a dictionary to accumulate performance data
+    # Initialize dictionaries to accumulate performance data and counts
     aggregated_performance = {}
-    total_entries = len(performance_entries)
+    metric_counts = {}
 
     for entry in performance_entries:
         for metric, value in entry.performance.items():
             if metric not in aggregated_performance:
                 aggregated_performance[metric] = 0
+                metric_counts[metric] = 0
             aggregated_performance[metric] += value
+            metric_counts[metric] += 1
 
     # Calculate the average for each performance metric
-    averaged_performance = {metric: (total / total_entries) for metric, total in aggregated_performance.items()}
+    averaged_performance = {metric: (total / metric_counts[metric]) for metric, total in aggregated_performance.items()}
 
     return jsonify({
         "successful": True,
@@ -2141,14 +2124,22 @@ def get_monthly_performance():
     merch_id = request.args.get('merch_id')
 
     if not month_str or not year_str or not merch_id:
-        return jsonify({"successful": False, "message": "Month, year, and merchandiser ID are required", "status_code": 400}), 400
+        return jsonify({
+            "successful": False, 
+            "message": "Month, year, and merchandiser ID are required", 
+            "status_code": 400
+        }), 400
 
     try:
         # Parse the month and year into integers
         month = int(month_str)
         year = int(year_str)
     except ValueError:
-        return jsonify({"successful": False, "message": "Invalid month or year format. Use MM and YYYY", "status_code": 400}), 400
+        return jsonify({
+            "successful": False, 
+            "message": "Invalid month or year format. Use MM and YYYY", 
+            "status_code": 400
+        }), 400
 
     # Calculate the start and end of the given month
     start_of_month = datetime(year, month, 1, 0, 0, 0)
@@ -2164,22 +2155,32 @@ def get_monthly_performance():
                                                        .all()
 
     if not performance_entries:
-        return jsonify({"successful": False, "message": "No performance data found for the given month", "status_code": 404}), 404
+        return jsonify({
+            "successful": False, 
+            "message": "No performance data found for the given month", 
+            "status_code": 404
+        }), 404
 
-    # Initialize a dictionary to accumulate performance data
+    # Initialize dictionaries to accumulate performance data and counts
     aggregated_performance = {}
-    total_days = len(performance_entries)
+    metric_counts = {}
 
     for entry in performance_entries:
         for metric, value in entry.performance.items():
             if metric not in aggregated_performance:
                 aggregated_performance[metric] = 0
+                metric_counts[metric] = 0
             aggregated_performance[metric] += value
+            metric_counts[metric] += 1
 
     # Calculate the average for each performance metric
-    averaged_performance = {metric: (total / total_days) for metric, total in aggregated_performance.items()}
+    averaged_performance = {metric: (total / metric_counts[metric]) for metric, total in aggregated_performance.items()}
 
-    return jsonify({"successful": True, "message": averaged_performance, "status_code": 200}), 200
+    return jsonify({
+        "successful": True, 
+        "message": averaged_performance, 
+        "status_code": 200
+    }), 200
 
 
 @app.route("/users/get/range/performance", methods=["GET"])
@@ -2213,19 +2214,21 @@ def get_range_performance():
 
     # Initialize a dictionary to accumulate performance data
     aggregated_performance = {}
-    total_days = len(performance_entries)
+    total_entries = len(performance_entries)
 
     for entry in performance_entries:
         for metric, value in entry.performance.items():
             if metric not in aggregated_performance:
-                aggregated_performance[metric] = 0
-            aggregated_performance[metric] += value
+                aggregated_performance[metric] = []
+            aggregated_performance[metric].append(value)
 
-    # Calculate the average for each performance metric
-    averaged_performance = {metric: (total / total_days) for metric, total in aggregated_performance.items()}
+    # Calculate the average for each performance metric that exists across all entries
+    averaged_performance = {}
+    for metric, values in aggregated_performance.items():
+        if len(values) == total_entries:
+            averaged_performance[metric] = sum(values) / total_entries
 
     return jsonify({"successful": True, "message": averaged_performance, "status_code": 200}), 200
-
 
 @app.route("/users/create/kpi", methods=["POST"])
 @jwt_required()
@@ -2446,21 +2449,133 @@ def update_kpi(id):
         db.session.rollback()
         return jsonify({"successful": False, "message": f"Failed: Error: {err}", "status_code": 500}), 500
     
-
-@app.route("/users/delete/kpi/<int:id>", methods=["DELETE"])
+@app.route("/users/leaderboard/performance", methods=["GET"])
 @jwt_required()
-def delete_kpi(id):
-    kpi = KeyPerformaceIndicator.query.get(id)
-    if not kpi:
-        return jsonify({"successful": False, "message": "No KPI found", "status_code": 404}), 404
-
+def get_leaderboard_performance():
     try:
-        db.session.delete(kpi)
+        # Get the current month
+        current_datetime = datetime.now()
+        current_month = current_datetime.strftime("%B")  # Full month name (e.g., January)
+
+        # Calculate the start and end of the current month
+        start_of_month = current_datetime.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        end_of_month = (start_of_month.replace(month=start_of_month.month % 12 + 1, day=1) - timedelta(days=1)).replace(hour=23, minute=59, second=59)
+
+        # Query all performance entries for the current month
+        performance_entries = MerchandiserPerformance.query.filter(MerchandiserPerformance.date_time >= start_of_month,
+                                                                  MerchandiserPerformance.date_time <= end_of_month)\
+                                                           .all()
+
+        if not performance_entries:
+            return jsonify({
+                "successful": False,
+                "message": "No performance data found for the current month",
+                "status_code": 404
+            }), 404
+
+        # Initialize a dictionary to accumulate total_performance scores and count of entries for each merchandiser
+        merchandiser_scores = {}
+        for entry in performance_entries:
+            if entry.merchandiser_id not in merchandiser_scores:
+                merchandiser_scores[entry.merchandiser_id] = {
+                    "total_score": 0,
+                    "count": 0
+                }
+            merchandiser_scores[entry.merchandiser_id]["total_score"] += entry.performance["total_performance"]
+            merchandiser_scores[entry.merchandiser_id]["count"] += 1
+
+        # Calculate average total_performance for each merchandiser
+        leaderboard = []
+        for merchandiser_id, data in merchandiser_scores.items():
+            average_score = data["total_score"] / data["count"] if data["count"] > 0 else 0
+
+            # Get first name and last name from User model
+            user = User.query.filter_by(id=merchandiser_id).first()
+            if user:
+                name = f"{user.first_name} {user.last_name}"
+            else:
+                name = "Unknown"
+
+            leaderboard.append({
+                "name": name,
+                "score": average_score,
+                "month": current_month
+            })
+
+        # Sort leaderboard by score descending
+        leaderboard = sorted(leaderboard, key=lambda x: x["score"], reverse=True)
+
+        return jsonify({
+            "successful": True,
+            "leaderboard": leaderboard,
+            "status_code": 200
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "successful": False,
+            "message": f"An error occurred: {str(e)}",
+            "status_code": 500
+        }), 500
+
+
+@app.route("/users/complete/route/plan/<int:id>", methods=["PUT"])
+@jwt_required()
+def complete_route_plan(id):
+    try:
+        route_plan = RoutePlan.query.get(id)
+
+        if not route_plan:
+            return jsonify({"message": "Route plan not found.", "status_code": 404, "successful": False}), 404
+
+        route_plan.status = "complete"
         db.session.commit()
-        return jsonify({"successful": True, "message": "KPI deleted successfully", "status_code": 204}), 204
-    except Exception as err:
+
+        return jsonify({"message": f"Route plan {id} marked as complete successfully.", "status_code": 201, "successful": True}), 201
+
+    except Exception as e:
         db.session.rollback()
-        return jsonify({"successful": False, "message": f"Failed: Error: {err}", "status_code": 500}), 500
+        return jsonify({"message": f"Failed to mark route plan {id} as complete. Error: {str(e)}", "status_code": 500, "successful": False}), 500
+
+@app.route("/users/notifications/edit-status/<int:notification_id>", methods=["PUT"])
+@jwt_required()
+def edit_notification_status(notification_id):
+    try:
+        notification = Message.query.get(notification_id)
+        if not notification:
+            return jsonify({"message": "Notification not found", "status_code": 404, "successful": False}), 404
+
+        notification.status = "read"
+        db.session.commit()
+        return jsonify({"message": "Notification status updated successfully", "status_code": 201, "successful": True}), 201
+    
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        error_message = str(e.__dict__.get('orig') or e)
+        return jsonify({"message": f"Failed to update notification status: {error_message}", "status_code": 500, "successful": False}), 500
+
+
+@app.route("/users/notifications/unread/<int:merchandiser_id>", methods=["GET"])
+@jwt_required()
+def get_unread_notifications(merchandiser_id):
+    try:
+        notifications = Message.query.filter_by(merchandiser_id=merchandiser_id, status='unread').all()
+
+        if not notifications:
+            return jsonify({"message": "No unread notifications found", "status_code": 404, "successful": False}), 404
+
+        unread_notifications = []
+        for notification in notifications:
+            unread_notifications.append({
+                "id": notification.id,
+                "manager_id": notification.manager_id,
+                "message": notification.message,
+                "status": notification.status
+            })
+        return jsonify({"message": unread_notifications, "status_code": 200, "successful": True}), 200
+    except SQLAlchemyError as e:
+        error_message = str(e.__dict__.get('orig') or e)
+        return jsonify({"message": f"Failed to fetch notifications: {error_message}", "status_code": 500, "successful": False}), 500
 
 
 if __name__ == '__main__':

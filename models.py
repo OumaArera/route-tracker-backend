@@ -146,3 +146,15 @@ class AssignedMerchandiser(db.Model):
     manager = db.relationship('User', backref=db.backref('assigned_merchandisers', lazy=True))
 
 
+
+class Message(db.Model):
+    __tablename__ = "messages"
+
+    id = db.Column(db.Integer, primary_key=True)
+    manager_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
+    merchandiser_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(10), nullable=False)
+
+    merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('merchandiser_messages', lazy=True))
+    manager = db.relationship('User', foreign_keys=[manager_id], backref=db.backref('manager_messages', lazy=True))
