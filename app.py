@@ -2521,19 +2521,24 @@ def reply_to_notification():
     
     message_id = data.get("message_id")
     reply_text = data.get("reply")
+    sender = data.get("sender")
 
-    if not all([message_id, reply]):
+    if not all([message_id, reply, sender]):
         return jsonify({"message": "Missing required fields", "status_code": 400, "successful": False}), 400
 
     message = Message.query.filter_by(id=message_id).first()
     if not message:
         return jsonify({"message": "Message not found", "status_code": 404, "successful": False}), 404
 
+    if not isinstance(sender, str) or not isinstance(reply_text, str):
+        return jsonify({"message": "Message and sender must be strings", "status_code": 400, "successful": False}), 400
+
     reply = Reply(
         manager_id=message.manager_id,
         merchandiser_id=message.merchandiser_id,
         message_id=message_id,
         reply=reply_text,
+        sender=sender,
         status="unread"  
     )
 
@@ -2566,6 +2571,7 @@ def get_unread_notifications(id):
                 "manager_id": reply.manager_id,
                 "merchandiser_id": reply.merchandiser_id,
                 "reply": reply.reply,
+                "sender": reply.sender,
                 "status": reply.status
             } for reply in replies]
 

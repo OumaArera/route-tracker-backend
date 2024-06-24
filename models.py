@@ -162,15 +162,17 @@ class Message(db.Model):
 
 
 class Reply(db.Model):
-    __tablename__ = "replies"
+    __tablename__ = "replies_"
 
     id = db.Column(db.Integer, primary_key=True)
     manager_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
     merchandiser_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
     message_id = db.Column(db.Integer, ForeignKey("messages.id"), nullable=False)
     reply = db.Column(db.Text, nullable=False)
+    sender = db.Column(db.String(10), nullable=False) 
     status = db.Column(db.String(10), nullable=False)
 
     message = db.relationship('Message', backref=db.backref('replies', lazy=True))
     merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('merchandiser_replies', lazy=True))
     manager = db.relationship('User', foreign_keys=[manager_id], backref=db.backref('manager_replies', lazy=True))
+
