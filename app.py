@@ -2000,18 +2000,20 @@ def get_week_performance(merch_id):
             "status_code": 404
         }), 404
 
-    # Initialize a dictionary to accumulate performance data
+    # Initialize dictionaries to accumulate performance data and counts
     aggregated_performance = {}
-    total_days = len(performance_entries)
+    metric_counts = {}
 
     for entry in performance_entries:
         for metric, value in entry.performance.items():
             if metric not in aggregated_performance:
                 aggregated_performance[metric] = 0
+                metric_counts[metric] = 0
             aggregated_performance[metric] += value
+            metric_counts[metric] += 1
 
     # Calculate the average for each performance metric
-    averaged_performance = {metric: (total / total_days) for metric, total in aggregated_performance.items()}
+    averaged_performance = {metric: (total / metric_counts[metric]) for metric, total in aggregated_performance.items()}
 
     return jsonify({
         "successful": True,
@@ -2039,18 +2041,20 @@ def get_month_performance(merch_id):
             "status_code": 404
         }), 404
 
-    # Initialize a dictionary to accumulate performance data
+    # Initialize dictionaries to accumulate performance data and counts
     aggregated_performance = {}
-    total_entries = len(performance_entries)
+    metric_counts = {}
 
     for entry in performance_entries:
         for metric, value in entry.performance.items():
             if metric not in aggregated_performance:
                 aggregated_performance[metric] = 0
+                metric_counts[metric] = 0
             aggregated_performance[metric] += value
+            metric_counts[metric] += 1
 
     # Calculate the average for each performance metric
-    averaged_performance = {metric: (total / total_entries) for metric, total in aggregated_performance.items()}
+    averaged_performance = {metric: (total / metric_counts[metric]) for metric, total in aggregated_performance.items()}
 
     return jsonify({
         "successful": True,
@@ -2151,14 +2155,22 @@ def get_monthly_performance():
     merch_id = request.args.get('merch_id')
 
     if not month_str or not year_str or not merch_id:
-        return jsonify({"successful": False, "message": "Month, year, and merchandiser ID are required", "status_code": 400}), 400
+        return jsonify({
+            "successful": False, 
+            "message": "Month, year, and merchandiser ID are required", 
+            "status_code": 400
+        }), 400
 
     try:
         # Parse the month and year into integers
         month = int(month_str)
         year = int(year_str)
     except ValueError:
-        return jsonify({"successful": False, "message": "Invalid month or year format. Use MM and YYYY", "status_code": 400}), 400
+        return jsonify({
+            "successful": False, 
+            "message": "Invalid month or year format. Use MM and YYYY", 
+            "status_code": 400
+        }), 400
 
     # Calculate the start and end of the given month
     start_of_month = datetime(year, month, 1, 0, 0, 0)
@@ -2174,22 +2186,32 @@ def get_monthly_performance():
                                                        .all()
 
     if not performance_entries:
-        return jsonify({"successful": False, "message": "No performance data found for the given month", "status_code": 404}), 404
+        return jsonify({
+            "successful": False, 
+            "message": "No performance data found for the given month", 
+            "status_code": 404
+        }), 404
 
-    # Initialize a dictionary to accumulate performance data
+    # Initialize dictionaries to accumulate performance data and counts
     aggregated_performance = {}
-    total_days = len(performance_entries)
+    metric_counts = {}
 
     for entry in performance_entries:
         for metric, value in entry.performance.items():
             if metric not in aggregated_performance:
                 aggregated_performance[metric] = 0
+                metric_counts[metric] = 0
             aggregated_performance[metric] += value
+            metric_counts[metric] += 1
 
     # Calculate the average for each performance metric
-    averaged_performance = {metric: (total / total_days) for metric, total in aggregated_performance.items()}
+    averaged_performance = {metric: (total / metric_counts[metric]) for metric, total in aggregated_performance.items()}
 
-    return jsonify({"successful": True, "message": averaged_performance, "status_code": 200}), 200
+    return jsonify({
+        "successful": True, 
+        "message": averaged_performance, 
+        "status_code": 200
+    }), 200
 
 
 @app.route("/users/get/range/performance", methods=["GET"])
@@ -2223,19 +2245,21 @@ def get_range_performance():
 
     # Initialize a dictionary to accumulate performance data
     aggregated_performance = {}
-    total_days = len(performance_entries)
+    total_entries = len(performance_entries)
 
     for entry in performance_entries:
         for metric, value in entry.performance.items():
             if metric not in aggregated_performance:
-                aggregated_performance[metric] = 0
-            aggregated_performance[metric] += value
+                aggregated_performance[metric] = []
+            aggregated_performance[metric].append(value)
 
-    # Calculate the average for each performance metric
-    averaged_performance = {metric: (total / total_days) for metric, total in aggregated_performance.items()}
+    # Calculate the average for each performance metric that exists across all entries
+    averaged_performance = {}
+    for metric, values in aggregated_performance.items():
+        if len(values) == total_entries:
+            averaged_performance[metric] = sum(values) / total_entries
 
     return jsonify({"successful": True, "message": averaged_performance, "status_code": 200}), 200
-
 
 @app.route("/users/create/kpi", methods=["POST"])
 @jwt_required()
@@ -2456,22 +2480,80 @@ def update_kpi(id):
         db.session.rollback()
         return jsonify({"successful": False, "message": f"Failed: Error: {err}", "status_code": 500}), 500
     
-
-@app.route("/users/delete/kpi/<int:id>", methods=["DELETE"])
+@app.route("/users/leaderboard/performance", methods=["GET"])
 @jwt_required()
-def delete_kpi(id):
-    kpi = KeyPerformaceIndicator.query.get(id)
-    if not kpi:
-        return jsonify({"successful": False, "message": "No KPI found", "status_code": 404}), 404
-
+def get_leaderboard_performance():
     try:
-        db.session.delete(kpi)
-        db.session.commit()
-        return jsonify({"successful": True, "message": "KPI deleted successfully", "status_code": 204}), 204
-    except Exception as err:
-        db.session.rollback()
-        return jsonify({"successful": False, "message": f"Failed: Error: {err}", "status_code": 500}), 500
+        # Get the current month
+        current_datetime = datetime.now()
+        current_month = current_datetime.strftime("%B")  # Full month name (e.g., January)
 
+        # Calculate the start and end of the current month
+        start_of_month = current_datetime.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        end_of_month = (start_of_month.replace(month=start_of_month.month % 12 + 1, day=1) - timedelta(days=1)).replace(hour=23, minute=59, second=59)
+
+        # Query all performance entries for the current month
+        performance_entries = MerchandiserPerformance.query.filter(MerchandiserPerformance.date_time >= start_of_month,
+                                                                  MerchandiserPerformance.date_time <= end_of_month)\
+                                                           .all()
+
+        if not performance_entries:
+            return jsonify({
+                "successful": False,
+                "message": "No performance data found for the current month",
+                "status_code": 404
+            }), 404
+
+        # Initialize a dictionary to accumulate total_performance scores and count of entries for each merchandiser
+        merchandiser_scores = {}
+        for entry in performance_entries:
+            if entry.merchandiser_id not in merchandiser_scores:
+                merchandiser_scores[entry.merchandiser_id] = {
+                    "total_score": 0,
+                    "count": 0
+                }
+            merchandiser_scores[entry.merchandiser_id]["total_score"] += entry.performance["total_performance"]
+            merchandiser_scores[entry.merchandiser_id]["count"] += 1
+
+        # Calculate average total_performance for each merchandiser
+        leaderboard = []
+        for merchandiser_id, data in merchandiser_scores.items():
+            average_score = data["total_score"] / data["count"] if data["count"] > 0 else 0
+
+            # Get first name and last name from User model
+            user = User.query.filter_by(id=merchandiser_id).first()
+            if user:
+                name = f"{user.first_name} {user.last_name}"
+            else:
+                name = "Unknown"
+
+            leaderboard.append({
+                "name": name,
+                "score": average_score,
+                "month": current_month
+            })
+
+        # Sort leaderboard by score descending
+        leaderboard = sorted(leaderboard, key=lambda x: x["score"], reverse=True)
+
+        return jsonify({
+            "successful": True,
+            "leaderboard": leaderboard,
+            "status_code": 200
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "successful": False,
+            "message": f"An error occurred: {str(e)}",
+            "status_code": 500
+        }), 500
+
+
+@app.route("/users/complete/route/plan/<int:id>", methods=["POST"])
+@jwt_required()
+def complete_route_plan():
+    pass
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5555, debug=True)
