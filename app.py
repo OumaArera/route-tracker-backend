@@ -524,54 +524,6 @@ def get_merchandiser_route_plans(merchandiser_id):
     return jsonify({'message': route_plans_list,"successful": True,"status_code": 200}), 200
 
 
-def send_email_to_merchandiser(data):
-
-    staff_no = data.get('staff_no')
-    manager_id = data.get('manager_id')
-    date_range = data.get('date_range')
-    instructions = data.get('instructions')
-    status = data.get('status')
-
-    manager = User.query.filter_by(id=manager_id).first()
-    merchandiser = User.query.filter_by(staff_no=staff_no).first()
-
-    if not manager:
-        return  jsonify({"message": "Invalid manager","successful": False,"status_code": 400}), 400
-
-    subject = 'Route Plans'
-
-    body = f"\nGreetings {merchandiser.first_name} {merchandiser.last_name}, I trust this mail finds you well.\n\n"
-
-    body += "Please find below the details of the route plans assigned to you:\n\n"
-    body += f"Date range from: {date_range['start_date']} to {date_range['end_date']}\n\n"
-
-    for instruction in instructions:
-        body += f"Start date: {instruction['start']} - End Date: {instruction['end']} -  {instruction['facility']} - {instruction['instructions']}\n\n"
-
-    body += f"Status: {status}\n\n"
-    body += "Kindly make sure to send a report of your daily activities. The report should address instructions.\n\n"
-
-    body += f"Warm regards,\n\n"
-    body += f"{manager.first_name}, \n"
-    body += f"Sales Manager,\n"
-    body += f"Merch Mate Group\n\n"
-
-    msg = MIMEText(body)
-    msg['Subject'] = subject
-    msg['From'] = f"{manager.first_name}{manager.last_name}@trial-351ndgwynjrlzqx8.mlsender.net"
-    msg['To'] = merchandiser.email
-
-    
-    smtp_server = app.config['SMTP_SERVER_ADDRESS']
-    smtp_port = app.config['SMTP_PORT']
-    username = app.config['SMTP_USERNAME']
-    password = app.config['SMTP_PASSWORD']
-
-    with smtplib.SMTP(smtp_server, smtp_port) as server:
-        server.starttls()
-        server.login(username, password)
-        server.sendmail(username, merchandiser.email, msg.as_string())
-
 
 @app.route("/users/manager-routes/<int:id>", methods=["GET"])
 @jwt_required()
@@ -795,8 +747,7 @@ def route_plan_details():
 
         start_date_dt = datetime.fromisoformat(start_date).date()
         end_date_dt = datetime.fromisoformat(end_date).date()
-        print(f"First day of the month: {first_day_of_month}. Start date: {start_date_dt}. Last day of the month: {last_day_of_month}")
-        print(f"First day of the month: {first_day_of_month}. End date: {end_date_dt}. Last day of the month: {last_day_of_month}")
+        
         if not (first_day_of_month <= start_date_dt <= last_day_of_month) or not (first_day_of_month <= end_date_dt <= last_day_of_month):
             return jsonify({'message': 'Assignments can only be made for the current month', "successful": False, "status_code": 400}), 400
 
@@ -827,9 +778,7 @@ def route_plan_details():
         try:
             db.session.add(new_route_plan)
             db.session.commit()
-            send_email_to_merchandiser(data)
             user_id = get_jwt_identity()
-            log_activity('Created merchandiser routes', user_id)
             return jsonify({'message': 'Route plan created successfully', "successful": True, "status_code": 201}), 201
 
         except Exception as err:
@@ -1387,6 +1336,7 @@ def get_facilities(manager_id):
             "type": facility.type
         })
     return jsonify({"message": facilities_data, "successful": True, "status_code": 200 }), 200
+
 
 @app.route("/users/get/facilities", methods=["GET"])
 @jwt_required()
