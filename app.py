@@ -1787,13 +1787,11 @@ def compute_merch_scores(response):
 
     performance_dict = {}
 
-    total_possible_score = 0
-    total_score = 0
+    total_scores = []
 
     for kpi in kpis:
         kpi_metrics = kpi.performance_metric
-        kpi_total_score = 0
-        
+
         for metric, requirements in kpi_metrics.items():
             text_required = requirements.get('text', False)
             image_required = requirements.get('image', False)
@@ -1813,19 +1811,32 @@ def compute_merch_scores(response):
                 image_score = 0.5 
 
             total_score_metric = min(text_score + image_score, 1) * 100  # Convert to percentage
-            kpi_total_score += total_score_metric
-
+            total_scores.append(total_score_metric)
             performance_dict[metric] = total_score_metric
-        
-        # Calculate the total possible score based on metrics considered
-        total_possible_score += len(kpi_metrics) * 100  # Each metric is potentially 100%
 
-        # Store the average score for this KPI
-        average_kpi_score = kpi_total_score / len(kpi_metrics)
-        total_score += average_kpi_score
-    
-    # Calculate performance metrics
-    performance_percentage = (total_score / len(kpis)) * 0.6  # 60% weight for performance metrics
+    # Calculate timeliness score
+    route_plan_id = response['route_plan_id']
+    route_plan = RoutePlan.query.filter_by(id=route_plan_id).first()
+    timeliness_percentage = 0
+
+    if route_plan:
+        try:
+            instructions = json.loads(route_plan.instructions)
+            for instruction in instructions:
+                if instruction.get('id') == response['instruction_id']:
+                    instruction_start = datetime.strptime(instruction.get('start'), '%Y-%m-%dT%H:%M:%S')
+                    if response_datetime.date() == instruction_start.date():
+                        timeliness_percentage = 100
+                    break
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON instructions: {e}")
+
+    total_scores.append(timeliness_percentage)
+    performance_dict['timeliness'] = timeliness_percentage
+
+    # Calculate the average score of metrics and timeliness
+    average_performance_score = sum(total_scores) / len(total_scores)
+    weighted_performance_score = average_performance_score * 0.6
 
     # Calculate completeness score
     start_of_month = datetime(response_datetime.year, response_datetime.month, 1)
@@ -1834,34 +1845,31 @@ def compute_merch_scores(response):
     route_plans = RoutePlan.query.filter(RoutePlan.merchandiser_id == merchandiser_id,
                                          RoutePlan.date_range['start_date'].astext.cast(Date) >= start_of_month.date(),
                                          RoutePlan.date_range['end_date'].astext.cast(Date) <= end_of_month.date()).all()
-    completeness_percentage = 0
     total_instructions = 0
     completed_instructions = 0
 
     for route_plan in route_plans:
         try:
             instructions = json.loads(route_plan.instructions)
+            for instruction in instructions:
+                total_instructions += 1
+                if instruction.get('status').lower() == 'complete':
+                    completed_instructions += 1
         except json.JSONDecodeError as e:
             print(f"Error decoding JSON instructions: {e}")
-            continue
 
-        total_instructions += len(instructions)
-        completed_instructions += sum(1 for instruction in instructions if instruction.get('status') == 'complete')
-    
+    completeness_percentage = 0
     if total_instructions > 0:
         completeness_percentage = (completed_instructions / total_instructions) * 100
-    
-    completeness_score = completeness_percentage * 0.4  
+
+    weighted_completeness_score = completeness_percentage * 0.4
+    performance_dict['completeness'] = completeness_percentage
 
     # Calculate total performance
-    total_performance = performance_percentage + completeness_score
-
-    performance_dict['completeness'] = completeness_percentage
+    total_performance = weighted_performance_score + weighted_completeness_score
     performance_dict['total_performance'] = total_performance
 
-    print(f"Computed performance scores: {performance_dict}")
     merchandiser_performance(merchandiser_id, performance_dict)
-
 
 @app.route("/users/approve/response", methods=["PUT"])
 @jwt_required()
@@ -1919,7 +1927,8 @@ def approve_response():
         "response": response_to_rate.response,
         "date_time": response_to_rate.date_time.strftime('%Y-%m-%dT%H:%M:%S'),
         "status": response_to_rate.status,
-        "route_plan_id": route_plan_id
+        "route_plan_id": route_plan_id,
+        "instruction_id": instruction_id
     }
     
     response_to_rate.status = "Approved"
@@ -1943,6 +1952,7 @@ def approve_response():
             "status_code": 500,
             "successful": False
         }), 500
+
 
 @app.route("/users/get/day/performance/<int:merch_id>", methods=["GET"])
 @jwt_required()
