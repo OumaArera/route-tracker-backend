@@ -525,6 +525,7 @@ def get_merchandiser_route_plans(merchandiser_id):
 
 
 
+
 @app.route("/users/manager-routes/<int:id>", methods=["GET"])
 @jwt_required()
 def get_manager_routes(id):
@@ -633,7 +634,6 @@ def modify_route(id):
 @app.route("/users/merchandisers/routes/<int:id>", methods=["GET"])
 @jwt_required()
 def get_merchandiser_routes(id):
-    # Fetch all route plans for the given merchandiser
     routes = RoutePlan.query.filter_by(merchandiser_id=id).all()
 
     if not routes:
@@ -642,7 +642,8 @@ def get_merchandiser_routes(id):
     # Current month date range
     current_date = datetime.now(timezone.utc)
     first_day_of_month = current_date.replace(day=1)
-    last_day_of_month = (first_day_of_month + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    next_month = first_day_of_month + timedelta(days=32)
+    last_day_of_month = next_month.replace(day=1) - timedelta(days=1)
 
     filtered_routes = []
     
@@ -650,18 +651,21 @@ def get_merchandiser_routes(id):
         start_date_dt = datetime.fromisoformat(route.date_range['start_date']).replace(tzinfo=timezone.utc)
         end_date_dt = datetime.fromisoformat(route.date_range['end_date']).replace(tzinfo=timezone.utc)
         
-        if not (first_day_of_month <= start_date_dt <= last_day_of_month) or not (first_day_of_month <= end_date_dt <= last_day_of_month):
+        # Check if route's date range overlaps with the current month
+        if not (first_day_of_month <= end_date_dt and start_date_dt <= last_day_of_month):
             continue
         
         manager = User.query.get(route.manager_id)
-        manager_name = f"{manager.first_name} {manager.last_name}"
-        
+        manager_name = f"{manager.first_name} {manager.last_name}" if manager else "Unknown"
+
         instructions = json.loads(route.instructions)
         for instruction in instructions:
             facility_id = instruction.get('facility')
             facility = Facility.query.get(facility_id)
             if facility:
                 instruction['facility_name'] = facility.name
+            else:
+                instruction['facility_name'] = "Unknown"
 
         filtered_routes.append({
             'id': route.id,
@@ -674,7 +678,6 @@ def get_merchandiser_routes(id):
         })
 
     return jsonify({"successful": True, "status_code": 200, 'message': filtered_routes}), 200
-
 
 @app.route('/users/route-plans', methods=['GET', 'POST'])
 @jwt_required()
