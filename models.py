@@ -169,8 +169,8 @@ class Reply(db.Model):
     merchandiser_id = db.Column(db.Integer, ForeignKey("users.id"), nullable=False)
     message_id = db.Column(db.Integer, ForeignKey("messages.id"), nullable=False)
     reply = db.Column(db.Text, nullable=False)
-    sender = db.Column(db.String(10), nullable=False) 
-    status = db.Column(db.String(10), nullable=False)
+    sender = db.Column(db.String(20), nullable=False) 
+    status = db.Column(db.String(20), nullable=False)
 
     message = db.relationship('Message', backref=db.backref('replies', lazy=True))
     merchandiser = db.relationship('User', foreign_keys=[merchandiser_id], backref=db.backref('merchandiser_replies', lazy=True))
