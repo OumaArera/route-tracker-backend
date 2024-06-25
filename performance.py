@@ -189,3 +189,18 @@ print("Hello, World!")
     "score": "", #The average of total_performance
     "month": "" # current month
 }
+
+# data = request.get_json()
+# route_plan_id = data.get("route_plan_id")
+# instruction_id = data.get("instruction_id")
+# manager_id = data.get("manager_id")
+# merchandiser_id = data.get("merchandiser_id")
+# message = data.get("message")
+
+{
+    "route_plan_id": int,
+    "instruction_id": int,
+    "manager_id": int,
+    "merchandiser_id": int,
+    "message": "The message entered in the text area"
+}
