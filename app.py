@@ -2517,13 +2517,11 @@ def edit_notification_status(notification_id):
 @jwt_required()
 def reply_to_notification():
     data = request.get_json()
-
-    
     message_id = data.get("message_id")
     reply_text = data.get("reply")
     sender = data.get("sender")
 
-    if not all([message_id, reply, sender]):
+    if not all([message_id, reply_text, sender]):
         return jsonify({"message": "Missing required fields", "status_code": 400, "successful": False}), 400
 
     message = Message.query.filter_by(id=message_id).first()

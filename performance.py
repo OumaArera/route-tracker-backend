@@ -204,3 +204,15 @@ print("Hello, World!")
     "merchandiser_id": int,
     "message": "The message entered in the text area"
 }
+
+
+
+# message_id = data.get("message_id")
+# reply_text = data.get("reply")
+# sender = data.get("sender")
+
+# {
+#     "message_id": "", # ID of the message he is replying to
+#     "reply": "",  # The content of what user entered in the textarea. It is required
+#     "sender": ""  # The role
+# }
