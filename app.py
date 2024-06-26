@@ -831,8 +831,6 @@ def location_details():
             db.session.add(new_location)
             db.session.commit()
 
-            user_id = get_jwt_identity()
-            log_activity('Added location', user_id)
 
             return jsonify({'message': 'Location created successfully',"successful": True,"status_code": 201}), 201
         
