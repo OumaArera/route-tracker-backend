@@ -54,31 +54,6 @@ class Location(db.Model):
     longitude = db.Column(db.Float, nullable=False)
     merchandiser = db.relationship('User', backref=db.backref('locations', lazy=True))
 
-  
-
-class Notification(db.Model):
-
-    __tablename__ = "notifications"
-
-    id = db.Column(db.Integer, primary_key=True)
-    recipient_id = db.Column(db.Integer, ForeignKey('users.id'), nullable=False)
-    content = db.Column(db.Text, nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
-    status = db.Column(db.String(20), nullable=False)
-    recipient = db.relationship('User', backref=db.backref('notifications', lazy=True))
-
-
-class ActivityLog(db.Model):
-
-    __tablename__ = "activity_logs"
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, ForeignKey('users.id'), nullable=False)
-    action = db.Column(db.String(100), nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
-    user = db.relationship('User', backref=db.backref('activity_logs', lazy=True))
-
-
 class KeyPerformaceIndicator(db.Model):
 
     __tablename__ = "key_performance_indicators"

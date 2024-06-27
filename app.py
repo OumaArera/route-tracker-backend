@@ -26,7 +26,7 @@ from flask import send_from_directory
 
 
 
-from models import User,  RoutePlan, Location, Notification, ActivityLog, Reply,  Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance, Message
+from models import User,  RoutePlan, Location, Reply,  Facility, AssignedMerchandiser, KeyPerformaceIndicator, Response, MerchandiserPerformance, Message
 
 load_dotenv()
 
@@ -130,21 +130,6 @@ def delete_user():
         return jsonify({'message': f'Failed to delete user: {err}', "successful": False, "status_code": 500}), 500
     
 
-def log_activity(action, user_id):
-    try:
-        new_activity = ActivityLog(
-            user_id=user_id,
-            action=action
-        )
-        db.session.add(new_activity)
-        db.session.commit()
-        return jsonify({'message': 'Activity logged successfully', "successful": True, "status_code": 201}), 201
-
-    except Exception as err:
-        db.session.rollback()
-        print(f"Failed to log activity. Error: {err}")
-        return jsonify({'message': f'Error {err}', "successful": False, "status_code": 500}), 500
-
 @jwt.token_in_blocklist_loader
 def check_if_token_in_blacklist(jwt_header, jwt_payload):
     jti = jwt_payload["jti"]
@@ -153,20 +138,12 @@ def check_if_token_in_blacklist(jwt_header, jwt_payload):
 @app.route("/users/logout", methods=["POST"])
 @jwt_required()
 def logout_user():
-    data = request.get_json()
-    user_id = data.get("user_id")
 
-    # Extract JTI from the token
     jti = get_jwt()["jti"]
     blacklist.add(jti)
 
-    # Log the logout activity
-    log_activity('Logout', user_id)
-
-    # Create a response object
     response = make_response(jsonify({"message": "Logout successful.", "successful": True, "status_code": 201}))
 
-    # Unset JWT cookies
     unset_jwt_cookies(response)
 
     return response, 201
@@ -242,7 +219,6 @@ def signup():
         db.session.add(new_user)
         db.session.commit()
         send_new_user_credentials(data)
-        log_activity('User signed up', new_user.id)
         return jsonify({"successful": True, "status_code": 201, "access_token": access_token, 'message': 'User created successfully'}), 201
 
     except Exception as err:
@@ -371,8 +347,6 @@ def users():
         user_info = {'id': user.id, 'first_name': user.first_name, 'last_name': user.last_name, 'username': user.username, 'email': user.email, 'role': user.role, 'status': user.status,  "staff_no": user.staff_no, "avatar": user.avatar,}
         user_list.append(user_info)
 
-    user_id = get_jwt_identity()
-    log_activity('Viewed user list', user_id)
 
     return jsonify({ "successful": True, "status_code": 200, 'message': user_list}), 200
 
@@ -387,8 +361,6 @@ def get_user(user_id):
 
     user_info = {'id': user.id, 'first_name': user.first_name, 'last_name': user.last_name, 'username': user.username, 'email': user.email, 'role': user.role, 'status': user.status, "staff_no": user.staff_no, "avatar": user.avatar}
 
-    user_id = get_jwt_identity()
-    log_activity(f'Viewed details of user {user_id}', user_id)
 
     return jsonify({ "successful": True, "status_code": 200, 'message': user_info}), 200
 
@@ -420,53 +392,6 @@ def get_manager_route_plans(manager_id):
 
     return jsonify({'message': route_plans_list,"successful": True,"status_code": 200}), 200
 
-@app.route("/users/send-notifications", methods=["POST"])
-@jwt_required()
-def send_notification():
-
-    data = request.get_json()
-
-    if not data:
-        return jsonify({"message": "Invalid request: No data provided","successful": False, "status_code": 400}), 400
-    
-    staff_no = data.get("staff_no")
-    content = data.get("content")
-    timestamp = data.get("timestamp")
-    status = data.get("status")
-    merchandiser_id =data.get("merchandiser_id")
-
-    if not all([staff_no, content, timestamp, status]):
-        return jsonify({"message": "Missing required fields", "successful": False, "status_code": 400}), 400
-    
-    if not isinstance(content, str) or not isinstance(status, str) or not isinstance(timestamp, str):
-        return jsonify({"message": "Content, time, and status must be letters", "successful": False, "status_code": 400}), 400
-
-    try:
-        datetime.strptime(timestamp, "%Y-%m-%dT%H:%M")
-    except ValueError:
-        return jsonify({"message": "Invalid timestamp format. Use YYYY-MM-DDTHH:MM", "successful": False, "status_code": 400}), 400
-    
-    manager = User.query.filter_by(staff_no=staff_no).first()
-
-    if not manager:
-        return jsonify({"message": "Invalid manager's staff number.", "successful": False, "status_code": 400}), 400
-    
-    merchandiser = User.query.filter_by(id=merchandiser_id).first()
-    if not merchandiser:
-        return jsonify({"message": "Invalid merchandiser details, login again.", "successful": False, "status_code": 404}), 404
-    
-    notification = Notification(recipient_id=manager.id, content=content, timestamp=timestamp, status=status)
-
-    try:
-        db.session.add(notification)
-        db.session.commit()
-        
-        return jsonify({"message": "Notification sent successfully", "successful": True, "status_code": 201}), 201
-
-    except Exception as err:
-        db.session.rollback()
-        return jsonify({"message": f"Error: {err}", "successful": False, "status_code": 500}), 500
-    
 
 @app.route("/users/route-plans/<int:merchandiser_id>", methods=["GET"])
 @jwt_required()
@@ -499,7 +424,6 @@ def get_manager_routes(id):
     routes_list = []
     for route in routes:
         start_date = datetime.strptime(route.date_range['start_date'], '%Y-%m-%d')
-        end_date = datetime.strptime(route.date_range['end_date'], '%Y-%m-%d')
 
         if start_of_month <= start_date < start_of_next_month:
             merchandiser = User.query.filter_by(id=route.merchandiser_id).first()
@@ -657,8 +581,6 @@ def route_plan_details():
             }
             route_plan_list.append(route_plan_info)
 
-        user_id = get_jwt_identity()
-        log_activity('Viewed merchandiser routes', user_id)
 
         return jsonify({"successful": True, "status_code": 200, 'message': route_plan_list}), 200
 
@@ -840,8 +762,6 @@ def update_route_plan(route_plan_id):
     try:
         db.session.commit()
 
-        user_id = get_jwt_identity()
-        log_activity(f'Edited merchandiser route. Route id : {route_plan_id}', user_id)
         return jsonify({'message': 'Route plan updated successfully', "successful": True, "status_code": 201}), 201
 
     except Exception as err:
@@ -875,9 +795,6 @@ def location_details():
         for location in latest_locations_query:
             location_info = {'id': location.id,'merchandiser_id': location.merchandiser_id,'timestamp': location.timestamp.strftime('%Y-%m-%d %H:%M:%S'),'latitude': location.latitude,'longitude': location.longitude}
             location_list.append(location_info)
-
-        user_id = get_jwt_identity()
-        log_activity('Added location', user_id)
 
         return jsonify({"successful": True, "status_code": 200, 'message': location_list}), 200
     
@@ -914,8 +831,6 @@ def location_details():
             db.session.add(new_location)
             db.session.commit()
 
-            user_id = get_jwt_identity()
-            log_activity('Added location', user_id)
 
             return jsonify({'message': 'Location created successfully',"successful": True,"status_code": 201}), 201
         
@@ -941,8 +856,6 @@ def login_user():
     
     if user:
 
-        user_id = user.id
-
         if user.status == "blocked":
             
             return jsonify({"message": "Access denied, please contact system administrator", "successful": False, "status_code": 409}), 409
@@ -959,7 +872,6 @@ def login_user():
             user.last_login = datetime.now(timezone.utc)
             db.session.commit()
 
-            log_activity(f'Logged in', user_id)
             return jsonify({"successful": True, "status_code": 201, "access_token": access_token, "message": user_data}), 201
         
         else:
@@ -1007,8 +919,6 @@ def change_password():
             try:
                 db.session.commit()
                 user_id = user_id
-
-                log_activity(f'Changed password.', user_id)
                 return jsonify({"message": "Password changed successfully", "successful": True, "status_code": 201}), 201
             except Exception as err:
                 db.session.rollback()
@@ -1043,7 +953,6 @@ def edit_status(user_id):
 
         try:
             db.session.commit()
-            log_activity(f'Changed status to {new_status}.', user.id)
             return jsonify({"message": "Status updated successfully", "successful": True, "status_code": 200}), 200
         except Exception as err:
             db.session.rollback()
@@ -1075,179 +984,12 @@ def edit_role(user_id):
 
         try:
             db.session.commit()
-            log_activity(f'Changed role to {new_role}.', user.id)
             return jsonify({"message": "Role updated successfully", "successful": True, "status_code": 200}), 200
         except Exception as err:
             db.session.rollback()
             return jsonify({"message": f"Failed to update role. Error: {err}", "successful": False, "status_code": 500}), 500
     else:
         return jsonify({"message": "User not found", "successful": False, "status_code": 404}), 404
-
-
-@app.route("/users/edit-profile-image/<int:id>", methods=["PUT"])
-@jwt_required()
-def edit_user_image(id):
-    
-    data = request.get_json()
-
-    if not data:
-
-        return jsonify({
-            "message": "Invalid request",
-            "successful": False,
-            "status_code": 400
-            }), 400
-    
-    new_avatar = data.get("avatar")
-
-    # Check if avatar data is provided and is of type bytes
-    if new_avatar is not None and not isinstance(new_avatar, bytes):
-        return jsonify({
-            "message": "Avatar data must be in bytes format (BYTEA)",
-            "successful": False,
-            "status_code": 400
-            }), 400
-
-    user = User.query.get(id)
-
-    if user:
-        
-        user.avatar = new_avatar
-
-        try:
-            db.session.commit()
-            log_activity('Change profile image', id)
-            return jsonify({
-                "message": "Profile image updated successfully",
-                "successful": True,
-                "status_code": 201
-                }), 201
-        
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({
-                "message": f"Failed to update, error: {e}",
-                "successful": False,
-                "status_code": 500
-                }), 500
-        
-    else:
-        return jsonify({
-            "message": "User not found",
-            "successful": False,
-            "status_code": 404
-
-                        }), 404
-
-
-@jwt_required()
-def manage_notifications(user_id):
-    # Ensure that the user_id from the URL matches the one in the JWT token
-    jwt_user_id = get_jwt_identity()
-    if user_id != jwt_user_id:
-        return jsonify({"message": "Unauthorized access", "successful": False, "status_code": 401}), 401
-
-    if request.method == "GET":
-        try:
-            notifications = Notification.query.filter_by(recipient_id=user_id).all()
-
-            if not notifications:
-                return jsonify({"message": "No notifications found", "successful": False, "status_code": 404}), 404
-
-            notification_list = []
-            for notification in notifications:
-                notification_info = {"id": notification.id, "recipient_id": notification.recipient_id, "content": notification.content, "timestamp": notification.timestamp.strftime('%Y-%m-%d %H:%M:%S'), "status": notification.status}
-                notification_list.append(notification_info)
-
-            log_activity('Viewed notifications', user_id)
-            return jsonify({ "message": notification_list, "successful": True, "status_code": 200}), 200
-
-        except Exception as err:
-            return jsonify({"message": str(err), "successful": False,"status_code": 500}), 500
-
-    elif request.method == "POST":
-        data = request.get_json()
-
-        if not data:
-            return jsonify({"message": "Invalid data","successful": False, "status_code": 400}), 400
-
-        content = data.get("content")
-        recipient_email = data.get("recipient_email")
-
-        if not content:
-            return jsonify({"message": "Content is required","successful": False,"status_code": 400}), 400
-
-        if not recipient_email:
-            return jsonify({"message": "Recipient email is required", "successful": False, "status_code": 400}), 400
-
-        try:
-            user = User.query.filter_by(email=recipient_email).one()
-            recipient_id = user.id
-
-            new_notification = Notification(recipient_id=recipient_id, content=content, timestamp=datetime.now(timezone.utc),status="unread")
-
-            db.session.add(new_notification)
-            db.session.commit()
-
-            log_activity(f'Created notification: {content}', user_id)
-
-            return jsonify({ "message": "Notification created successfully", "successful": True, "status_code": 201}), 201
-
-        except NoResultFound:
-            return jsonify({"message": f"User with email {recipient_email} not found","successful": False, "status_code": 404}), 404
-
-        except Exception as err:
-            db.session.rollback()
-            return jsonify({"message": str(err),"successful": False, "status_code": 500}), 500
-
-
-@app.route("/users/notifications/<int:notification_id>", methods=["PUT", "DELETE"])
-@jwt_required()
-def update_or_delete_notification(notification_id):
-
-    notification = Notification.query.get(notification_id)
-
-    if not notification:
-        return jsonify({"message": "Notification not found","successful": False,"status_code": 404}), 404
-
-    if request.method == "PUT":
-        
-        data = request.get_json()
-        if not data:
-            return jsonify({"message": "Invalid data","successful": False,"status_code": 400}), 400
-
-        status = data.get("status")
-        
-        if status not in ["read", "unread"]:
-            return jsonify({ "message": "Invalid status value","successful": False,"status_code": 400}), 400
-
-        notification.status = status
-
-        try:
-            db.session.commit()
-
-            user_id = get_jwt_identity()
-            log_activity(f'Updated notification status: {notification_id}', user_id)
-
-            return jsonify({ "message": "Notification status updated successfully", "successful": True, "status_code": 201}), 201
-
-        except Exception as err:
-            db.session.rollback()
-            return jsonify({ "message": str(err), "successful": False, "status_code": 500}), 500
-
-    elif request.method == "DELETE":
-        try:
-            db.session.delete(notification)
-            db.session.commit()
-
-            user_id = get_jwt_identity()
-            log_activity(f'Deleted notification: {notification_id}', user_id)
-
-            return jsonify({ "message": "Notification deleted successfully", "successful": False, "status_code": 204}), 204
-
-        except Exception as err:
-            db.session.rollback()
-            return jsonify({"message": str(err), "successful": False, "status_code": 500}), 500
 
     
 @app.route("/users/<int:user_id>/update", methods=["PUT"])
@@ -1278,6 +1020,7 @@ def update_user(user_id):
     except Exception as err:
         db.session.rollback()
         return jsonify({"message": f"Failed to update password. Error: {err}", "successful": False, "status_code": 500}), 500
+
 
 @app.route("/users/get-facilities/<int:manager_id>", methods=[ "GET"])
 @jwt_required()
@@ -1315,6 +1058,7 @@ def get_all_facilities():
         })
 
     return jsonify({ "message": facilities_list, "status_code": 200, "successful": True}), 200 
+
 
 @app.route("/users/create/facility", methods=["POST"])
 @jwt_required()
@@ -1630,6 +1374,7 @@ def assign_merchandiser():
         db.session.rollback()
         return jsonify({"message": f"Failed to assign merchandisers: Error: {err}", "status_code": 500, "successful": False}), 500
 
+
 @app.route("/users/get/merchandisers/<int:manager_id>", methods=["GET"])
 @jwt_required()
 def get_manager_merchandisers(manager_id):
@@ -1921,11 +1666,7 @@ def get_week_performance(merch_id):
                                                        .all()
 
     if not performance_entries:
-        return jsonify({
-            "successful": False,
-            "message": "No performance data found for the given week",
-            "status_code": 404
-        }), 404
+        return jsonify({"successful": False, "message": "No performance data found for the given week", "status_code": 404}), 404
 
     # Initialize dictionaries to accumulate performance data and counts
     aggregated_performance = {}
@@ -1942,33 +1683,22 @@ def get_week_performance(merch_id):
     # Calculate the average for each performance metric
     averaged_performance = {metric: (total / metric_counts[metric]) for metric, total in aggregated_performance.items()}
 
-    return jsonify({
-        "successful": True,
-        "message": averaged_performance,
-        "status_code": 200
-    }), 200
+    return jsonify({"successful": True, "message": averaged_performance, "status_code": 200}), 200
 
 
 @app.route("/users/get/month/performance/<int:merch_id>", methods=["GET"])
 @jwt_required()
 def get_month_performance(merch_id):
-    # Calculate the start of the month (date 1)
     current_datetime = datetime.now()
     start_of_month = current_datetime.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    # Query the performance data from the start of the month to now
     performance_entries = MerchandiserPerformance.query.filter_by(merchandiser_id=merch_id)\
                                                        .filter(MerchandiserPerformance.date_time >= start_of_month)\
                                                        .all()
 
     if not performance_entries:
-        return jsonify({
-            "successful": False,
-            "message": "No performance data found for the given month",
-            "status_code": 404
-        }), 404
+        return jsonify({"successful": False, "message": "No performance data found for the given month", "status_code": 404}), 404
 
-    # Initialize dictionaries to accumulate performance data and counts
     aggregated_performance = {}
     metric_counts = {}
 
@@ -1980,53 +1710,38 @@ def get_month_performance(merch_id):
             aggregated_performance[metric] += value
             metric_counts[metric] += 1
 
-    # Calculate the average for each performance metric
     averaged_performance = {metric: (total / metric_counts[metric]) for metric, total in aggregated_performance.items()}
 
-    return jsonify({
-        "successful": True,
-        "message": averaged_performance,
-        "status_code": 200
-    }), 200
+    return jsonify({"successful": True, "message": averaged_performance, "status_code": 200}), 200
 
 
 @app.route("/users/get/year/performance/<int:merch_id>", methods=["GET"])
 @jwt_required()
 def get_yearly_performance(merch_id):
-    # Get the current date
     current_date = datetime.now()
-    # Initialize the dictionary to store monthly performance
     yearly_performance = {}
 
-    # Loop through each month of the past year
-    for month_offset in range(12):  # 12 months backward
-        # Calculate the month and year to look at
+    for month_offset in range(12):  
         year = current_date.year if current_date.month > month_offset else current_date.year - 1
         month = (current_date.month - month_offset - 1) % 12 + 1
 
-        # Calculate the start and end dates for the current month
         start_of_month = datetime(year, month, 1)
         if month == 12:
             end_of_month = datetime(year + 1, 1, 1) - timedelta(days=1)
         else:
             end_of_month = datetime(year, month + 1, 1) - timedelta(days=1)
 
-        # Query performance entries within the current month range
         performance_entries = MerchandiserPerformance.query.filter_by(merchandiser_id=merch_id)\
                                                            .filter(MerchandiserPerformance.date_time >= start_of_month)\
                                                            .filter(MerchandiserPerformance.date_time <= end_of_month)\
                                                            .all()
 
-        # Calculate the average total_performance for the current month
         total_performance_sum = sum(entry.performance['total_performance'] for entry in performance_entries)
         total_performance_avg = total_performance_sum / len(performance_entries) if performance_entries else 0
 
-        # Only add to the dictionary if there is data
         if performance_entries:
-            # Format the month and year for the dictionary key
             month_key = start_of_month.strftime("%B, %Y")
 
-            # Add the monthly performance to the yearly dictionary
             yearly_performance[month_key] = {'total_performance': total_performance_avg}
 
     if yearly_performance:
@@ -2038,7 +1753,6 @@ def get_yearly_performance(merch_id):
 @app.route("/users/get/performance", methods=["GET"])
 @jwt_required()
 def get_performance_by_date():
-    # Get the date from query parameters
     date_str = request.args.get('date')
     merch_id = request.args.get('merch_id')
 
@@ -2046,16 +1760,13 @@ def get_performance_by_date():
         return jsonify({"successful": False, "message": "Date and merchandiser ID are required", "status_code": 400}), 400
 
     try:
-        # Parse the date string into a datetime object
         query_date = datetime.strptime(date_str, '%Y-%m-%d')
     except ValueError:
         return jsonify({"successful": False, "message": "Invalid date format. Use YYYY-MM-DD", "status_code": 400}), 400
 
-    # Calculate the start and end of the given date
     start_of_day = query_date.replace(hour=0, minute=0, second=0, microsecond=0)
     end_of_day = query_date.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-    # Query the performance data for the given merchandiser and date
     performance_entry = MerchandiserPerformance.query.filter_by(merchandiser_id=merch_id)\
                                                      .filter(MerchandiserPerformance.date_time >= start_of_day)\
                                                      .filter(MerchandiserPerformance.date_time <= end_of_day)\
@@ -2076,7 +1787,6 @@ def get_performance_by_date():
 @app.route("/users/get/monthly/performance", methods=["GET"])
 @jwt_required()
 def get_monthly_performance():
-    # Get the month and year from query parameters
     month_str = request.args.get('month')
     year_str = request.args.get('year')
     merch_id = request.args.get('merch_id')
@@ -2089,37 +1799,25 @@ def get_monthly_performance():
         }), 400
 
     try:
-        # Parse the month and year into integers
         month = int(month_str)
         year = int(year_str)
     except ValueError:
-        return jsonify({
-            "successful": False, 
-            "message": "Invalid month or year format. Use MM and YYYY", 
-            "status_code": 400
-        }), 400
+        return jsonify({"successful": False,  "message": "Invalid month or year format. Use MM and YYYY",  "status_code": 400}), 400
 
-    # Calculate the start and end of the given month
     start_of_month = datetime(year, month, 1, 0, 0, 0)
     if month == 12:
         end_of_month = datetime(year + 1, 1, 1, 0, 0, 0) - timedelta(seconds=1)
     else:
         end_of_month = datetime(year, month + 1, 1, 0, 0, 0) - timedelta(seconds=1)
 
-    # Query the performance data from the start to the end of the month
     performance_entries = MerchandiserPerformance.query.filter_by(merchandiser_id=merch_id)\
                                                        .filter(MerchandiserPerformance.date_time >= start_of_month)\
                                                        .filter(MerchandiserPerformance.date_time <= end_of_month)\
                                                        .all()
 
     if not performance_entries:
-        return jsonify({
-            "successful": False, 
-            "message": "No performance data found for the given month", 
-            "status_code": 404
-        }), 404
+        return jsonify({"successful": False,  "message": "No performance data found for the given month",  "status_code": 404}), 404
 
-    # Initialize dictionaries to accumulate performance data and counts
     aggregated_performance = {}
     metric_counts = {}
 
@@ -2131,20 +1829,14 @@ def get_monthly_performance():
             aggregated_performance[metric] += value
             metric_counts[metric] += 1
 
-    # Calculate the average for each performance metric
     averaged_performance = {metric: (total / metric_counts[metric]) for metric, total in aggregated_performance.items()}
 
-    return jsonify({
-        "successful": True, 
-        "message": averaged_performance, 
-        "status_code": 200
-    }), 200
+    return jsonify({"successful": True, "message": averaged_performance, "status_code": 200}), 200
 
 
 @app.route("/users/get/range/performance", methods=["GET"])
 @jwt_required()
 def get_range_performance():
-    # Get the start date, end date, and merchandiser ID from query parameters
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     merch_id = request.args.get('merch_id')
@@ -2153,15 +1845,12 @@ def get_range_performance():
         return jsonify({"successful": False, "message": "Start date, end date, and merchandiser ID are required", "status_code": 400}), 400
 
     try:
-        # Parse the start and end dates into datetime objects
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
-        # Ensure the end date is inclusive by setting it to the end of the day
         end_date = end_date.replace(hour=23, minute=59, second=59)
     except ValueError:
         return jsonify({"successful": False, "message": "Invalid date format. Use YYYY-MM-DD", "status_code": 400}), 400
 
-    # Query the performance data from the start date to the end date
     performance_entries = MerchandiserPerformance.query.filter_by(merchandiser_id=merch_id)\
                                                        .filter(MerchandiserPerformance.date_time >= start_date)\
                                                        .filter(MerchandiserPerformance.date_time <= end_date)\
@@ -2170,7 +1859,6 @@ def get_range_performance():
     if not performance_entries:
         return jsonify({"successful": False, "message": "No performance data found for the given date range", "status_code": 404}), 404
 
-    # Initialize a dictionary to accumulate performance data
     aggregated_performance = {}
     total_entries = len(performance_entries)
 
@@ -2180,7 +1868,6 @@ def get_range_performance():
                 aggregated_performance[metric] = []
             aggregated_performance[metric].append(value)
 
-    # Calculate the average for each performance metric that exists across all entries
     averaged_performance = {}
     for metric, values in aggregated_performance.items():
         if len(values) == total_entries:
@@ -2195,8 +1882,6 @@ def create_key_performance_indicators():
         return jsonify({"message": "Invalid data: You did not provide any data.", "status_code": 400, "successful": False}), 400
 
     data = request.get_json()
-
-    # Validate the provided data
     sector_name = data.get("sector_name")
     company_name = data.get("company_name")
     admin_id = data.get("admin_id")
@@ -2268,12 +1953,12 @@ def delete_kpi(id):
         try:
             db.session.delete(kpi)
             db.session.commit()
-            return jsonify({"status_code": 200, "message": "KPI deleted successfully"}), 200
+            return jsonify({"status_code": 200, "message": "KPI deleted successfully", "successful": True}), 200
         except Exception as e:
             db.session.rollback()
-            return jsonify({"status_code": 500, "message": f"An error occurred: {str(e)}"}), 500
+            return jsonify({"status_code": 500, "message": f"An error occurred: {str(e)}", "successful": False}), 500
     else:
-        return jsonify({"status_code": 404, "message": "KPI not found"}), 404
+        return jsonify({"status_code": 404, "message": "KPI not found", "successful": False}), 404
 
 
 @app.route("/users/change/pass", methods=["PUT"])
@@ -2325,13 +2010,11 @@ def get_performance():
 @app.route("/users/get/all/routes", methods=["GET"])
 @jwt_required()
 def get_all_routes():
-    # Query all route plans from the RoutePlan model
     route_plans = RoutePlan.query.all()
 
     if not route_plans:
         return jsonify({"successful": False, "message": "No route plans found", "status_code": 404}), 404
 
-    # Format the route plans into the specified structure
     formatted_route_plans = []
     for plan in route_plans:
         formatted_plan = {
@@ -2340,9 +2023,9 @@ def get_all_routes():
                 "end_date": plan.date_range['end_date']
             },
             "id": plan.id,
-            "instructions": plan.instructions,  # Return instructions JSON as is
-            "manager_id": plan.manager_id, # Assuming you have a relationship setup for merchandiser
-            "staff_no": plan.merchandiser.staff_no,       # Assuming you have a relationship setup for merchandiser
+            "instructions": plan.instructions,  
+            "manager_id": plan.manager_id, 
+            "staff_no": plan.merchandiser.staff_no,
             "status": plan.status
         }
         formatted_route_plans.append(formatted_plan)
@@ -2354,10 +2037,8 @@ def get_all_routes():
 @jwt_required()
 def get_all_kpis():
     try:
-        # Query all KPIs
         kpis = KeyPerformaceIndicator.query.all()
         
-        # Format KPIs for response
         formatted_kpis = []
         for kpi in kpis:
             formatted_kpi = {
@@ -2369,21 +2050,10 @@ def get_all_kpis():
             }
             formatted_kpis.append(formatted_kpi)
         
-        # Return JSON response
-        return jsonify({
-            "successful": True,
-            "message": formatted_kpis,
-            "status_code": 200
-        }), 200
+        return jsonify({"successful": True, "message": formatted_kpis, "status_code": 200}), 200
     
     except Exception as e:
-        # Handle exceptions, log errors if needed
-        return jsonify({
-            "successful": False,
-            "message": "Failed to fetch KPIs",
-            "error": str(e),
-            "status_code": 500
-        }), 500
+        return jsonify({"successful": False, "message": f"Failed to fetch KPIs: {str(e)}", "status_code": 500}), 500
 
 
 @app.route("/users/update/kpi/<int:id>", methods=["PUT"])
@@ -2411,70 +2081,44 @@ def update_kpi(id):
 @jwt_required()
 def get_leaderboard_performance():
     try:
-        # Get the current month
         current_datetime = datetime.now()
-        current_month = current_datetime.strftime("%B")  # Full month name (e.g., January)
+        current_month = current_datetime.strftime("%B")
 
-        # Calculate the start and end of the current month
         start_of_month = current_datetime.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         end_of_month = (start_of_month.replace(month=start_of_month.month % 12 + 1, day=1) - timedelta(days=1)).replace(hour=23, minute=59, second=59)
 
-        # Query all performance entries for the current month
         performance_entries = MerchandiserPerformance.query.filter(MerchandiserPerformance.date_time >= start_of_month,
                                                                   MerchandiserPerformance.date_time <= end_of_month)\
                                                            .all()
 
         if not performance_entries:
-            return jsonify({
-                "successful": False,
-                "message": "No performance data found for the current month",
-                "status_code": 404
-            }), 404
+            return jsonify({"successful": False, "message": "No performance data found for the current month", "status_code": 404}), 404
 
-        # Initialize a dictionary to accumulate total_performance scores and count of entries for each merchandiser
         merchandiser_scores = {}
         for entry in performance_entries:
             if entry.merchandiser_id not in merchandiser_scores:
-                merchandiser_scores[entry.merchandiser_id] = {
-                    "total_score": 0,
-                    "count": 0
-                }
+                merchandiser_scores[entry.merchandiser_id] = {"total_score": 0, "count": 0}
             merchandiser_scores[entry.merchandiser_id]["total_score"] += entry.performance["total_performance"]
             merchandiser_scores[entry.merchandiser_id]["count"] += 1
 
-        # Calculate average total_performance for each merchandiser
         leaderboard = []
         for merchandiser_id, data in merchandiser_scores.items():
             average_score = data["total_score"] / data["count"] if data["count"] > 0 else 0
 
-            # Get first name and last name from User model
             user = User.query.filter_by(id=merchandiser_id).first()
             if user:
                 name = f"{user.first_name} {user.last_name}"
             else:
                 name = "Unknown"
 
-            leaderboard.append({
-                "name": name,
-                "score": average_score,
-                "month": current_month
-            })
+            leaderboard.append({"name": name, "score": average_score, "month": current_month})
 
-        # Sort leaderboard by score descending
         leaderboard = sorted(leaderboard, key=lambda x: x["score"], reverse=True)
 
-        return jsonify({
-            "successful": True,
-            "leaderboard": leaderboard,
-            "status_code": 200
-        }), 200
+        return jsonify({"successful": True, "message": leaderboard, "status_code": 200}), 200
 
     except Exception as e:
-        return jsonify({
-            "successful": False,
-            "message": f"An error occurred: {str(e)}",
-            "status_code": 500
-        }), 500
+        return jsonify({"successful": False, "message": f"An error occurred: {str(e)}", "status_code": 500}), 500
 
 
 @app.route("/users/complete/route/plan/<int:id>", methods=["PUT"])
