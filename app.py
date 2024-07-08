@@ -1,3 +1,4 @@
+from email.utils import formataddr
 from flask import Flask, request, jsonify, make_response
 from flask_restful import Api
 from flask_bcrypt import Bcrypt
@@ -11,7 +12,6 @@ from dotenv import load_dotenv
 from sqlalchemy import func, and_, Date, or_, extract
 import smtplib
 from email.mime.text import MIMEText
-from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 import json
 import os
@@ -281,7 +281,7 @@ def send_user_new_password(data, first_name):
 
     msg = MIMEText(body)
     msg['Subject'] = subject
-    msg['From'] = f"merchmate@trial-351ndgwynjrlzqx8.mlsender.net"
+    msg['From'] = formataddr(("Merch Mate Team", "merchmate@trial-3zxk54vq956ljy6v.mlsender.net"))
     msg['To'] = email
 
     smtp_server = app.config['SMTP_SERVER_ADDRESS']
@@ -320,7 +320,7 @@ def send_new_user_credentials(data):
 
     msg = MIMEText(body)
     msg['Subject'] = subject
-    msg['From'] = f"merchmate@trial-351ndgwynjrlzqx8.mlsender.net"
+    msg['From'] = formataddr(("Merch Mate Team", "merchmate@trial-3zxk54vq956ljy6v.mlsender.net"))
     msg['To'] = email
 
     smtp_server = app.config['SMTP_SERVER_ADDRESS']
