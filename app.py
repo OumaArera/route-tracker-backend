@@ -1417,132 +1417,6 @@ def get_manager_merchandisers(manager_id):
     return jsonify({"message": assigned_merchandisers_list, "status_code": 200, "successful": True}), 200
 
 
-def merchandiser_performance(merchandiser_id, new_scores):
-    current_datetime = datetime.now()
-    start_of_day = current_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    # Fetch the performance entry for today
-    performance_entry = MerchandiserPerformance.query.filter_by(merchandiser_id=merchandiser_id, date_time=start_of_day).first()
-    
-    # If no performance entry exists for today, create one
-    if not performance_entry:
-        performance_entry = MerchandiserPerformance(
-            merchandiser_id=merchandiser_id,
-            date_time=start_of_day,
-            day=start_of_day.strftime('%A'),
-            performance={}
-        )
-        db.session.add(performance_entry)
-        db.session.commit()  
-
-    # Ensure current performance is a dictionary
-    current_performance = performance_entry.performance or {}
-
-    # Update performance metrics
-    for metric, new_score in new_scores.items():
-        if metric in current_performance:
-            current_value = current_performance[metric]
-            updated_value = (current_value + new_score) / 2
-        else:
-            updated_value = new_score
-        
-        current_performance[metric] = updated_value
-        performance_entry.performance = current_performance
-        db.session.commit()
-
-def compute_merch_scores(response):
-    merchandiser_id = response['merchandiser_id']
-    response_datetime = datetime.strptime(response['date_time'], '%Y-%m-%dT%H:%M:%S')
-
-    # Retrieve all KPIs from the database
-    kpis = KeyPerformaceIndicator.query.all()
-
-    performance_dict = {}
-
-    total_scores = []
-
-    for kpi in kpis:
-        kpi_metrics = kpi.performance_metric
-
-        for metric, requirements in kpi_metrics.items():
-            text_required = requirements.get('text', False)
-            image_required = requirements.get('image', False)
-            metric_response = response['response'].get(metric, {})
-
-            text_score = 0
-            image_score = 0
-
-            if text_required:
-                text = metric_response.get('text', "")
-                if len(text) >= 500:
-                    text_score = 1
-                elif len(text) > 200:
-                    text_score = 0.5
-
-            if image_required and 'image' in metric_response and len(text) < 500:
-                image_score = 0.5 
-
-            total_score_metric = min(text_score + image_score, 1) * 100  # Convert to percentage
-            total_scores.append(total_score_metric)
-            performance_dict[metric] = total_score_metric
-
-    # Calculate timeliness score
-    route_plan_id = response['route_plan_id']
-    route_plan = RoutePlan.query.filter_by(id=route_plan_id).first()
-    timeliness_percentage = 0
-
-    if route_plan:
-        try:
-            instructions = json.loads(route_plan.instructions)
-            for instruction in instructions:
-                if instruction.get('id') == response['instruction_id']:
-                    instruction_start = datetime.strptime(instruction.get('start'), '%Y-%m-%dT%H:%M:%S')
-                    if response_datetime.date() == instruction_start.date():
-                        timeliness_percentage = 100
-                    break
-        except json.JSONDecodeError as e:
-            print(f"Error decoding JSON instructions: {e}")
-
-    total_scores.append(timeliness_percentage)
-    performance_dict['timeliness'] = timeliness_percentage
-
-    # Calculate the average score of metrics and timeliness
-    average_performance_score = sum(total_scores) / len(total_scores)
-    weighted_performance_score = average_performance_score * 0.6
-
-    # Calculate completeness score
-    start_of_month = datetime(response_datetime.year, response_datetime.month, 1)
-    end_of_month = (start_of_month + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-
-    route_plans = RoutePlan.query.filter(RoutePlan.merchandiser_id == merchandiser_id,
-                                         RoutePlan.date_range['start_date'].astext.cast(Date) >= start_of_month.date(),
-                                         RoutePlan.date_range['end_date'].astext.cast(Date) <= end_of_month.date()).all()
-    total_instructions = 0
-    completed_instructions = 0
-
-    for route_plan in route_plans:
-        try:
-            instructions = json.loads(route_plan.instructions)
-            for instruction in instructions:
-                total_instructions += 1
-                if instruction.get('status').lower() == 'complete':
-                    completed_instructions += 1
-        except json.JSONDecodeError as e:
-            print(f"Error decoding JSON instructions: {e}")
-
-    completeness_percentage = 0
-    if total_instructions > 0:
-        completeness_percentage = (completed_instructions / total_instructions) * 100
-
-    weighted_completeness_score = completeness_percentage * 0.4
-    performance_dict['completeness'] = completeness_percentage
-
-    # Calculate total performance
-    total_performance = weighted_performance_score + weighted_completeness_score
-    performance_dict['total_performance'] = total_performance
-
-    merchandiser_performance(merchandiser_id, performance_dict)
-
 @app.route("/users/approve/response", methods=["PUT"])
 @jwt_required()
 def approve_response():
@@ -1576,7 +1450,7 @@ def approve_response():
         }), 404
 
     # Parse and update the instruction status
-    instructions = json.loads(route_plan.instructions)  # Ensure instructions are parsed as a list of dictionaries
+    instructions = json.loads(route_plan.instructions)
     instruction_found = False
 
     for instruction in instructions:
@@ -1602,16 +1476,15 @@ def approve_response():
         "route_plan_id": route_plan_id,
         "instruction_id": instruction_id
     }
-    
+
     response_to_rate.status = "Approved"
 
     try:
-        # Commit the updated instructions back to the route plan
-        route_plan.instructions = json.dumps(instructions)  # Ensure instructions are stored as a JSON string
+        route_plan.instructions = json.dumps(instructions)
         db.session.commit()
 
         compute_merch_scores(response)
-        
+
         return jsonify({
             "message": "Response approved successfully.",
             "status_code": 201,
@@ -1624,6 +1497,126 @@ def approve_response():
             "status_code": 500,
             "successful": False
         }), 500
+
+def merchandiser_performance(merchandiser_id, new_scores):
+    current_datetime = datetime.now()
+    start_of_day = current_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    performance_entry = MerchandiserPerformance.query.filter_by(merchandiser_id=merchandiser_id, date_time=start_of_day).first()
+    
+    if not performance_entry:
+        performance_entry = MerchandiserPerformance(
+            merchandiser_id=merchandiser_id,
+            date_time=start_of_day,
+            day=start_of_day.strftime('%A'),
+            performance={}
+        )
+        db.session.add(performance_entry)
+        db.session.commit()  
+
+    current_performance = performance_entry.performance or {}
+
+    for metric, new_score in new_scores.items():
+        if metric in current_performance:
+            current_value = current_performance[metric]
+            updated_value = (current_value + new_score) / 2
+        else:
+            updated_value = new_score
+        
+        current_performance[metric] = updated_value
+        performance_entry.performance = current_performance
+        db.session.commit()
+
+def compute_merch_scores(response):
+    merchandiser_id = response['merchandiser_id']
+    response_datetime = datetime.strptime(response['date_time'], '%Y-%m-%dT%H:%M:%S')
+
+    kpis = KeyPerformaceIndicator.query.all()
+
+    performance_dict = {}
+
+    total_scores = []
+
+    for kpi in kpis:
+        kpi_metrics = kpi.performance_metric
+
+        for metric, requirements in kpi_metrics.items():
+            text_required = requirements.get('text', False)
+            image_required = requirements.get('image', False)
+            metric_response = response['response'].get(metric, {})
+
+            text_score = 0
+            image_score = 0
+
+            if text_required:
+                text = metric_response.get('text', "")
+                if len(text) >= 500:
+                    text_score = 1
+                elif len(text) > 200:
+                    text_score = 0.5
+
+            if image_required and 'image' in metric_response and len(text) < 500:
+                image_score = 0.5 
+
+            total_score_metric = min(text_score + image_score, 1) * 100
+            total_scores.append(total_score_metric)
+            performance_dict[metric] = total_score_metric
+
+    route_plan_id = response['route_plan_id']
+    route_plan = RoutePlan.query.filter_by(id=route_plan_id).first()
+    timeliness_percentage = 0
+
+    if route_plan:
+        try:
+            instructions = json.loads(route_plan.instructions)
+            for instruction in instructions:
+                if instruction.get('id') == response['instruction_id']:
+                    try:
+                        instruction_start = datetime.strptime(instruction.get('start'), '%Y-%m-%dT%H:%M:%S')
+                    except ValueError:
+                        instruction_start = datetime.strptime(instruction.get('start'), '%Y-%m-%dT%H:%M')
+                    if response_datetime.date() == instruction_start.date():
+                        timeliness_percentage = 100
+                    break
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON instructions: {e}")
+
+    total_scores.append(timeliness_percentage)
+    performance_dict['timeliness'] = timeliness_percentage
+
+    average_performance_score = sum(total_scores) / len(total_scores)
+    weighted_performance_score = average_performance_score * 0.6
+
+    start_of_month = datetime(response_datetime.year, response_datetime.month, 1)
+    end_of_month = (start_of_month + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+
+    route_plans = RoutePlan.query.filter(RoutePlan.merchandiser_id == merchandiser_id,
+                                         RoutePlan.date_range['start_date'].astext.cast(Date) >= start_of_month.date(),
+                                         RoutePlan.date_range['end_date'].astext.cast(Date) <= end_of_month.date()).all()
+    total_instructions = 0
+    completed_instructions = 0
+
+    for route_plan in route_plans:
+        try:
+            instructions = json.loads(route_plan.instructions)
+            for instruction in instructions:
+                total_instructions += 1
+                if instruction.get('status').lower() == 'complete':
+                    completed_instructions += 1
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON instructions: {e}")
+
+    completeness_percentage = 0
+    if total_instructions > 0:
+        completeness_percentage = (completed_instructions / total_instructions) * 100
+
+    weighted_completeness_score = completeness_percentage * 0.4
+    performance_dict['completeness'] = completeness_percentage
+
+    total_performance = weighted_performance_score + weighted_completeness_score
+    performance_dict['total_performance'] = total_performance
+
+    merchandiser_performance(merchandiser_id, performance_dict)
 
 
 @app.route("/users/get/day/performance/<int:merch_id>", methods=["GET"])
